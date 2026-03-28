@@ -41,8 +41,8 @@ const bucketName = "gaia-source"
 
 func main() {
 	endpoint := "localhost:9000"
-	accessKey := "aqS77seDQ3DC9wTiE9zA"
-	secretKey := "GwImjA0vi0bSIW5BZUEdJjsjUE9sWT50bxk9vtnP"
+	accessKey := os.Getenv("AWS_ACCESS_KEY")
+	secretKey := os.Getenv("AWS_SECRET_KEY")
 	useSSL := false
 
 	minioClient, err := minio.New(endpoint, &minio.Options{
