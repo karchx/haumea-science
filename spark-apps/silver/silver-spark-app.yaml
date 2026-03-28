@@ -1,0 +1,60 @@
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: silver-spark-app
+  namespace: de
+spec:
+  type: Python
+  pythonVersion: "3"
+  mode: cluster
+  image: "192.168.0.9:32000/silver-haumea:1.0.0"
+  imagePullPolicy: Always
+  mainApplicationFile: "local:///opt/spark/haumea/main.py"
+  sparkVersion: "3.4.0"
+  sparkConf:
+    "spark.jars.ivy": "/tmp/.ivy2"
+
+  deps:
+    packages:
+      - "org.apache.hadoop:hadoop-aws:3.2.0"
+      - "com.amazonaws:aws-java-sdk-bundle:1.11.375"
+  
+  hadoopConf:
+    "fs.s3a.aws.credentials.provider": "com.amazonaws.auth.EnvironmentVariableCredentialsProvider"
+    "fs.s3a.endpoint": "http://minio.platform:9000"
+    "fs.s3a.path.style.access": "true"
+    "fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    "fs.s3a.connection.ssl.enabled": "false"
+
+  driver:
+    cores: 1
+    coreLimit: "1000m"
+    memory: "512m"
+    serviceAccount: spark
+    env:
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: s3-credentials
+          key: accessKey
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: s3-credentials
+          key: secretKey
+  executor:
+    cores: 1
+    instances: 1
+    memory: "1024m"
+    env:
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: s3-credentials
+          key: accessKey
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: s3-credentials
+          key: secretKey
+
