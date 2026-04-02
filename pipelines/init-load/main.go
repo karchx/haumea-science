@@ -93,23 +93,36 @@ func processCSVToParquet(ctx context.Context, config TablesConfig, minioClient *
 	table, err := readFileRemote(ctx, minioClient, config.Source, pool)
 	if err != nil {
 		log.Errorf("Failed to read source file from MinIO: %v", err)
+		return
 	}
+	defer table.Release()
 
 	var buf bytes.Buffer
 
 	writerProps := parquet.NewWriterProperties(
 		parquet.WithCompression(compress.Codecs.Snappy),
+		parquet.WithDataPageVersion(parquet.DataPageV1),
+		parquet.WithVersion(parquet.V1_0),
+		parquet.WithDictionaryDefault(true),
 	)
 
 	pqWriter, err := pqarrow.NewFileWriter(table.Schema(), &buf, writerProps, pqarrow.DefaultWriterProps())
 	if err != nil {
 		log.Errorf("Failed to create Parquet writer: %v", err)
+		return
 	}
 
 	if err := pqWriter.WriteTable(table, table.NumRows()); err != nil {
 		log.Errorf("Failed to write record to Parquet: %v", err)
+		return
 	}
-	pqWriter.Close()
+	if err := pqWriter.Close(); err != nil {
+		log.Errorf("Failed to close Parquet writer: %v", err)
+		return
+	}
+
+	finalData := buf.Bytes()
+	dataLen := int64(buf.Len())
 
 	// generate partions
 	partitionPath := fmt.Sprintf("%s/%s/", config.Dest, config.TableName)
@@ -118,11 +131,12 @@ func processCSVToParquet(ctx context.Context, config TablesConfig, minioClient *
 	}
 	partitionPath += fmt.Sprintf("part-%s.parquet", uuid.New().String())
 
-	info, err := minioClient.PutObject(ctx, bucketName, partitionPath, bytes.NewReader(buf.Bytes()), int64(buf.Len()), minio.PutObjectOptions{
+	info, err := minioClient.PutObject(ctx, bucketName, partitionPath, bytes.NewReader(finalData), dataLen, minio.PutObjectOptions{
 		ContentType: "application/octet-stream",
 	})
 	if err != nil {
 		log.Errorf("Failed to upload Parquet file to MinIO: %v", err)
+		return
 	}
 
 	log.Infof("Successfully uploaded Parquet file to MinIO: %s (size: %d bytes)", info.Key, info.Size)
@@ -145,12 +159,6 @@ func readFileRemote(ctx context.Context, minioClient *minio.Client, objectName s
 		csv.WithNullReader(true, "NULL", "null", ""),
 	)
 	defer reader.Release()
-	if !reader.Next() {
-		if err := reader.Err(); err != nil {
-			return nil, fmt.Errorf("%w", err)
-		}
-		return nil, fmt.Errorf("no data found in CSV file: %s", objectName)
-	}
 
 	var records []arrow.Record
 	for reader.Next() {
@@ -163,8 +171,11 @@ func readFileRemote(ctx context.Context, minioClient *minio.Client, objectName s
 		return nil, fmt.Errorf("error reading CSV file: %w", reader.Err())
 	}
 
+	if len(records) == 0 {
+		return nil, fmt.Errorf("no records found in CSV file")
+	}
+
 	table := array.NewTableFromRecords(reader.Schema(), records)
-	defer table.Release()
 
 	// free records
 	for _, rec := range records {
