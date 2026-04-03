@@ -4,20 +4,35 @@ metadata:
   name: silver-spark-app
   namespace: de
 spec:
-  type: Python
-  pythonVersion: "3"
+  type: Scala
   mode: cluster
   image: "192.168.0.9:32000/silver-haumea:1.0.0"
-  imagePullPolicy: Always
-  mainApplicationFile: "local:///opt/spark/haumea/main.py"
-  sparkVersion: "3.4.0"
+  imagePullPolicy: IfNotPresent
+  mainClass: "com.haumea.pipelines.GaiaMainSource"
+  mainApplicationFile: "s3a://pipelines/silver/haumea/spark-app-assembly-0.1.0.jar"
+  sparkVersion: "3.5.1"
   sparkConf:
-    "spark.jars.ivy": "/tmp/.ivy2"
+    "spark.sql.shuffle.partitions": "2"
+    "spark.sql.parquet.enableVectorizedReader": "false"
+    "spark.sql.parquet.validateSchema": "false"
+    "spark.sql.parquet.int96RebaseModeInRead": "LEGACY"
+    "spark.sql.parquet.datetimeRebaseModeInRead": "LEGACY"
 
-  deps:
-    packages:
-      - "org.apache.hadoop:hadoop-aws:3.2.0"
-      - "com.amazonaws:aws-java-sdk-bundle:1.11.375"
+    # Iceberg configuration
+    "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
+    "spark.sql.catalog.lakehouse": "org.apache.iceberg.spark.SparkCatalog"
+    "spark.sql.catalog.lakehouse.type": "jdbc"
+    "spark.sql.catalog.lakehouse.uri": "jdbc:postgresql://postgres-postgresql.platform.svc.cluster.local:5432/iceberg_db"
+    "spark.sql.catalog.lakehouse.jdbc.user": "platform"
+    "spark.sql.catalog.lakehouse.jdbc.password": "changeme123"
+    "spark.sql.catalog.lakehouse.warehouse": "s3a://gaia-source/"
+    "spark.sql.catalog.lakehouse.io-impl": "org.apache.iceberg.aws.s3.S3FileIO"
+
+    # S3FILEIO configuration
+    "spark.sql.catalog.lakehouse.s3.endpoint": "http://minio.platform:9000"
+    "spark.sql.catalog.lakehouse.s3.path-style-access": "true"
+    "spark.sql.catalog.lakehouse.client.region": "us-east-1"
+
   
   hadoopConf:
     "fs.s3a.aws.credentials.provider": "com.amazonaws.auth.EnvironmentVariableCredentialsProvider"
@@ -29,9 +44,13 @@ spec:
   driver:
     cores: 1
     coreLimit: "1000m"
-    memory: "512m"
+    memory: "1024m"
+    nodeSelector:
+      kubernetes.io/hostname: "stivnix"
     serviceAccount: spark
     env:
+    - name: AWS_REGION
+      value: "us-east-1"
     - name: AWS_ACCESS_KEY_ID
       valueFrom:
         secretKeyRef:
@@ -45,8 +64,13 @@ spec:
   executor:
     cores: 1
     instances: 1
-    memory: "1024m"
+    memory: "4096m"
+    memoryOverhead: "2048m"
+    nodeSelector:
+      kubernetes.io/hostname: "nixos"
     env:
+    - name: AWS_REGION
+      value: "us-east-1"
     - name: AWS_ACCESS_KEY_ID
       valueFrom:
         secretKeyRef:
