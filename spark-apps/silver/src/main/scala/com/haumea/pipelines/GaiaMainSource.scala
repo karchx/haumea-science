@@ -15,6 +15,14 @@ object GaiaMainSource extends Pipeline {
     F.shiftright(F.col(colName), shiftBits).cast("integer")
   }
 
+  def calcMagnitudeAbs(wCol: String, mGCol: String): Column = {
+    // d = wCol / 1000
+    // MG = mGCol + 5 + 5 * log10(d)
+    val d = F.col(wCol) / F.lit(1000)
+    val MG = F.col(mGCol) + F.lit(5) + F.lit(5) * F.log10(d)
+    MG.cast("float")
+  }
+
   override def run(spark: SparkSession): Unit = {
     // val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
     val defaultDate = "2026-04-02"
@@ -26,13 +34,22 @@ object GaiaMainSource extends Pipeline {
       .parquet("s3a://gaia-source/bronze/gaia_source/")
     
     val filterDf = rawDf.withColumn("fct_dt", F.make_date(F.col("year"), F.col("month"), F.col("day"))) 
-       .filter(F.col("fct_dt") === defaultDate)
+       .filter(
+         F.col("fct_dt") === defaultDate &&
+         F.col("parallax_over_error") > 10 && // omit SNR
+         F.col("parallax") > 0 &&
+         F.col("ruwe") < 1.4
+       )
 
-    val castDf = filterDf.withColumn("ra", F.col("ra").cast("double"))
-      .withColumn("dec", F.col("dec").cast("double"))
-      .withColumn("parallax", F.col("parallax").cast("double"))
+    val castDf = filterDf
+      .withColumn("ra", F.col("ra").cast("float"))
+      .withColumn("dec", F.col("dec").cast("float"))
+      .withColumn("parallax", F.col("parallax").cast("float"))
       .withColumn("source_id", F.col("source_id").cast("long"))
+      .withColumn("bp_rp", F.col("bp_rp").cast("float"))
       .withColumn("healpix_6", getHealpixExpr(6, "source_id"))
+      .withColumn("healpix_4", getHealpixExpr(4, "source_id"))
+      .withColumn("absolute_mag_g", calcMagnitudeAbs("parallax", "phot_g_mean_mag"))
       .dropDuplicates("source_id")
 
     val df = castDf.select(
@@ -41,19 +58,26 @@ object GaiaMainSource extends Pipeline {
       F.col("dec"), 
       F.col("parallax"), 
       F.col("healpix_6"), 
-      F.col("fct_dt")
+      F.col("healpix_4"),
+      F.col("fct_dt"),
+      F.col("bp_rp"),
+      F.col("absolute_mag_g")
     )
 
     if (!spark.catalog.tableExists(tableName)) {
       df.writeTo(tableName)
+        .partitionedBy(F.col("fct_dt"))
         .tableProperty("format-version", "2")
         .tableProperty("write.parquet.row-group-size-bytes", "33554432") // 32MB
+        .tableProperty("write.spark.accept-any-schema", "true")
         .create()
 
         spark.sql(s"ALTER TABLE $tableName WRITE ORDERED BY healpix_6")
       // spark.sql(s"ALTER TABLE $tableName WRITE ORDERED BY ZORDER(ra, dec)")
     } else {
-      df.writeTo(tableName).append()
+      df.writeTo(tableName)
+        .option("mergeSchema", "true")
+        .overwritePartitions()
     }
   }
 }
