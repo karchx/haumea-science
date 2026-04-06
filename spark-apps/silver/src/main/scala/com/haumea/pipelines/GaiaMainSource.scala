@@ -5,6 +5,8 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.{functions => F, Column}
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.text.SimpleDateFormat
+import java.sql.Connection
 
 object GaiaMainSource extends Pipeline {
   // ref: https://blog.g-vo.org/healpix-maps-in-general-and-in-gaia.html
@@ -23,9 +25,23 @@ object GaiaMainSource extends Pipeline {
     MG.cast("float")
   }
 
-  override def run(spark: SparkSession): Unit = {
-    // val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-    val defaultDate = "2026-04-02"
+  override def run(spark: SparkSession, connection: Connection): Unit = {
+    val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+
+    val formatter = new SimpleDateFormat("yyyy-MM-dd")
+    val metadata = getMetadata(connection, "silver", "gaia_main_source")
+    val currentOpt = metadata.get("current")
+    val genesisOpt = metadata.get("genesis")
+    val targetDate = currentOpt.getOrElse(genesisOpt.orNull)
+    val defaultDate: String = targetDate match {
+      case d: java.sql.Date => formatter.format(d)
+      case s: java.sql.Timestamp => formatter.format(s)
+      case d: java.util.Date => formatter.format(d)
+      case s: String => s
+      case null | _ => "2026-04-02"
+    }
+    println(s"Processing data for date: $defaultDate")
+
     val tableName = "lakehouse.silver.gaia_main_source"
 
     val rawDf = spark.read
@@ -48,7 +64,7 @@ object GaiaMainSource extends Pipeline {
       .withColumn("source_id", F.col("source_id").cast("long"))
       .withColumn("bp_rp", F.col("bp_rp").cast("float"))
       .withColumn("healpix_6", getHealpixExpr(6, "source_id"))
-      .withColumn("healpix_4", getHealpixExpr(4, "source_id"))
+      .withColumn("healpix_8", getHealpixExpr(8, "source_id"))
       .withColumn("absolute_mag_g", calcMagnitudeAbs("parallax", "phot_g_mean_mag"))
       .dropDuplicates("source_id")
 
@@ -58,10 +74,10 @@ object GaiaMainSource extends Pipeline {
       F.col("dec"), 
       F.col("parallax"), 
       F.col("healpix_6"), 
-      F.col("healpix_4"),
       F.col("fct_dt"),
       F.col("bp_rp"),
-      F.col("absolute_mag_g")
+      F.col("absolute_mag_g"),
+      F.col("healpix_8")
     )
 
     if (!spark.catalog.tableExists(tableName)) {
@@ -73,11 +89,12 @@ object GaiaMainSource extends Pipeline {
         .create()
 
         spark.sql(s"ALTER TABLE $tableName WRITE ORDERED BY healpix_6")
-      // spark.sql(s"ALTER TABLE $tableName WRITE ORDERED BY ZORDER(ra, dec)")
     } else {
       df.writeTo(tableName)
         .option("mergeSchema", "true")
         .overwritePartitions()
     }
+    val metadataId = metadata.get("id").map(_.toString).getOrElse("gaia_main_source")
+    updateMetadata(connection, metadataId, java.sql.Date.valueOf(today))
   }
 }
