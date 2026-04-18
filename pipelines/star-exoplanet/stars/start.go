@@ -1,0 +1,67 @@
+package main
+
+import "fmt"
+
+func main() {
+	sql := `SELECT
+  apstar_id,
+  target_id,
+  apogee_id,
+  ra,
+  dec,
+  glon,
+  glat,
+  apogee_target1,
+  apogee_target2,
+  apogee2_target1,
+  apogee2_target2,
+  apogee2_target3,
+  apogee2_target4,
+  min_h,
+  max_h,
+  min_jk,
+  max_jk,
+  survey,
+  extratarg,
+  nvisits,
+  snr,
+  starflag,
+  andflag,
+  vhelio_avg,
+  vscatter,
+  verr,
+  rv_teff,
+  rv_logg,
+  rv_feh,
+  rv_alpha,
+  rv_carb,
+  rv_ccfwhm,
+  rv_autofwhm,
+  rv_flag,
+  n_components,
+  gaiaedr3_source_id,
+  gaiaedr3_parallax,
+  gaiaedr3_parallax_error,
+  gaiaedr3_pmra,
+  gaiaedr3_pmra_error,
+  gaiaedr3_pmdec,
+  gaiaedr3_pmdec_error,
+  gaiaedr3_phot_g_mean_mag,
+  gaiaedr3_phot_bp_mean_mag,
+  gaiaedr3_phot_rp_mean_mag,
+  gaiaedr3_dr2_radial_velocity,
+  gaiaedr3_dr2_radial_velocity_error,
+  gaiaedr3_r_med_geo,
+  gaiaedr3_r_lo_geo,
+  gaiaedr3_r_hi_geo,
+  gaiaedr3_r_med_photogeo,
+  gaiaedr3_r_lo_photogeo,
+  gaiaedr3_r_hi_photogeo,
+  cx,
+  cy,
+  cz
+FROM apogeeStar`
+
+	fmt.Println(sql)
+
+}

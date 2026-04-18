@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: exoplanet-consumer
+  namespace: de
+spec:
+  template:
+    spec:
+      containers:
+      - name: consumer
+        image: 192.168.0.9:32000/haumea-science/star-exoplanet:latest
+        args: ["load"]
+        env:
+        - name: RABBITMQ_PASS
+          valueFrom:
+            secretKeyRef:
+              name: starexoplanet-credentials
+              key: RABBITMQ_PASS
+        - name: RABBITMQ_USER
+          valueFrom:
+            secretKeyRef:
+              name: starexoplanet-credentials
+              key: RABBITMQ_USER
+        - name: AWS_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: starexoplanet-credentials
+              key: AWS_ACCESS_KEY
+        - name: AWS_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: starexoplanet-credentials
+              key: AWS_SECRET_KEY
+      restartPolicy: Never
