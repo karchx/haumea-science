@@ -25,6 +25,38 @@ object GaiaMainSource extends Pipeline {
     MG.cast("float")
   }
 
+  def writeGaiaMainSource(df: org.apache.spark.sql.DataFrame, tableName: String): Unit = {
+    if (!df.sparkSession.catalog.tableExists(tableName)) {
+      df.writeTo(tableName)
+        .partitionedBy(F.col("fct_dt"))
+        .tableProperty("format-version", "2")
+        .tableProperty("write.parquet.row-group-size-bytes", "33554432") // 32MB
+        .tableProperty("write.spark.accept-any-schema", "true")
+        .create()
+
+      df.sparkSession.sql(s"ALTER TABLE $tableName WRITE ORDERED BY healpix_6")
+    } else {
+      df.writeTo(tableName)
+        .option("mergeSchema", "true")
+        .overwritePartitions()
+    }
+  }
+
+  def writeGaiaAstro(df: org.apache.spark.sql.DataFrame, tableName: String): Unit = {
+    if (!df.sparkSession.catalog.tableExists(tableName)) {
+      df.writeTo(tableName)
+        .partitionedBy(F.col("fct_dt"))
+        .tableProperty("format-version", "2")
+        .tableProperty("write.parquet.row-group-size-bytes", "33554432") // 32MB
+        .tableProperty("write.spark.accept-any-schema", "true")
+        .create()
+    } else {
+      df.writeTo(tableName)
+        .option("mergeSchema", "true")
+        .overwritePartitions()
+    }
+  }
+
   override def run(spark: SparkSession, connection: Connection): Unit = {
     val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
 
@@ -48,6 +80,11 @@ object GaiaMainSource extends Pipeline {
       .option("header", "true")
       .option("inferSchema", "true")
       .parquet("s3a://gaia-source/bronze/gaia_source/")
+
+    val rawAstroDf = spark.read
+      .option("header", "true")
+      .option("inferSchema", "true")
+      .parquet("s3a://gaia-source/bronze/astrophysical_parameters/")
     
     val filterDf = rawDf.withColumn("fct_dt", F.make_date(F.col("year"), F.col("month"), F.col("day"))) 
        .filter(
@@ -68,7 +105,7 @@ object GaiaMainSource extends Pipeline {
       .withColumn("absolute_mag_g", calcMagnitudeAbs("parallax", "phot_g_mean_mag"))
       .dropDuplicates("source_id")
 
-    val df = castDf.select(
+    val dfMainSource = castDf.select(
       F.col("source_id"), 
       F.col("ra"), 
       F.col("dec"), 
@@ -77,23 +114,27 @@ object GaiaMainSource extends Pipeline {
       F.col("fct_dt"),
       F.col("bp_rp"),
       F.col("absolute_mag_g"),
-      F.col("healpix_8")
+      F.col("healpix_8"),
+      F.col("phot_g_mean_mag"),
+      F.col("pmra"),
+      F.col("pmdec"),
     )
 
-    if (!spark.catalog.tableExists(tableName)) {
-      df.writeTo(tableName)
-        .partitionedBy(F.col("fct_dt"))
-        .tableProperty("format-version", "2")
-        .tableProperty("write.parquet.row-group-size-bytes", "33554432") // 32MB
-        .tableProperty("write.spark.accept-any-schema", "true")
-        .create()
 
-        spark.sql(s"ALTER TABLE $tableName WRITE ORDERED BY healpix_6")
-    } else {
-      df.writeTo(tableName)
-        .option("mergeSchema", "true")
-        .overwritePartitions()
-    }
+    val filterDfAstro = rawAstroDf.withColumn("fct_dt", F.make_date(F.col("year"), F.col("month"), F.col("day"))) 
+      .filter(F.col("fct_dt") === defaultDate)
+
+    val dfAstro = filterDfAstro.select(
+      F.col("source_id").cast("long").alias("gaia_source_id"), 
+      F.col("fct_dt"),
+      F.col("teff_gspphot").cast("float").alias("teff"),
+      F.col("radius_gspphot").cast("float").alias("stellar_radius"),
+      F.col("lum_flame").cast("float").alias("stellar_luminosity"),
+    ).filter(F.col("source_id").isNotNull)
+
+    writeGaiaMainSource(dfMainSource, tableName)
+    writeGaiaAstro(dfAstro, "lakehouse.silver.gaia_astro")
+
     val metadataId = metadata.get("id").map(_.toString).getOrElse("gaia_main_source")
     updateMetadata(connection, metadataId, java.sql.Date.valueOf(today))
   }
