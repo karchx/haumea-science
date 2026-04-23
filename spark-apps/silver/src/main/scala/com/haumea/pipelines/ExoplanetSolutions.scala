@@ -60,6 +60,13 @@ object ExoplanetSolutions extends Pipeline {
         "releasedate" -> F.coalesce(
           F.to_timestamp(F.col("releasedate"), "yyyy-MM-dd HH:mm:ss"),
           F.to_timestamp(F.col("releasedate"), "yyyy-MM-dd")
+        ),
+        "discovery_id" -> F.md5(
+          F.concat_ws("||", 
+            F.coalesce(F.col("discoverymethod"), F.lit("unknown")),
+            F.coalesce(F.col("disc_year"), F.lit("unknown")),
+            F.coalesce(F.col("disc_telescope"), F.lit("unknown"))
+          )
         )
       ))
       .withColumn("pl_masse_imputed", F.first(F.col("pl_masse_null"), ignoreNulls = true).over(extractWindow))
@@ -70,21 +77,17 @@ object ExoplanetSolutions extends Pipeline {
         F.col("hostname").alias("host_name"),
         F.col("gaia_dr3_id").alias("gaia_source_id"),
         F.col("soltype").alias("solution_type"),
-        F.col("discoverymethod").alias("discovery_method"),
-        F.col("disc_year").alias("discovery_year"),
         F.col("disc_locale").alias("discovery_locale"),
-        F.col("disc_telescope").alias("discovery_telescope"),
+        F.col("discovery_id").alias("discovery_id"),
         F.col("releasedate").alias("release_date"),
         F.col("fct_dt").alias("fct_dt")
       )
       .drop("rn")
-      .orderBy(F.col("discovery_year"))
 
       if (!spark.catalog.tableExists(tableName)) {
         transformeDf.writeTo(tableName)
           .partitionedBy(F.col("fct_dt"))
           .tableProperty("format-version", "2")
-          .tableProperty("write.spark.accept-any-schema", "true")
           .create()
       } else {
         transformeDf.writeTo(tableName)
