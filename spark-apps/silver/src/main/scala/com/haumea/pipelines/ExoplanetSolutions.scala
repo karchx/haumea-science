@@ -61,7 +61,7 @@ object ExoplanetSolutions extends Pipeline {
           F.to_timestamp(F.col("releasedate"), "yyyy-MM-dd HH:mm:ss"),
           F.to_timestamp(F.col("releasedate"), "yyyy-MM-dd")
         ),
-        "discovery_id" -> F.md5(
+        "discovery_sk" -> F.md5(
           F.concat_ws("||", 
             F.coalesce(F.col("discoverymethod"), F.lit("unknown")),
             F.coalesce(F.col("disc_year"), F.lit("unknown")),
@@ -69,16 +69,19 @@ object ExoplanetSolutions extends Pipeline {
           )
         )
       ))
+      .withColumn("star_sk", F.md5(
+          F.concat_ws("||", F.col("hostname"), F.col("gaia_dr3_id"))
+        )
+      )
       .withColumn("pl_masse_imputed", F.first(F.col("pl_masse_null"), ignoreNulls = true).over(extractWindow))
       .filter(F.col("rn") === 1)
       .select(
         F.col("pl_name").alias("planet_name"),
         F.col("pl_masse_imputed").cast(FloatType).alias("planet_mass"),
-        F.col("hostname").alias("host_name"),
-        F.col("gaia_dr3_id").alias("gaia_source_id"),
+        F.col("star_sk"),
         F.col("soltype").alias("solution_type"),
         F.col("disc_locale").alias("discovery_locale"),
-        F.col("discovery_id").alias("discovery_id"),
+        F.col("discovery_sk"),
         F.col("releasedate").alias("release_date"),
         F.col("fct_dt").alias("fct_dt")
       )

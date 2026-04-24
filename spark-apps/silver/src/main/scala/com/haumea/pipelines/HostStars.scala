@@ -60,6 +60,8 @@ object HostStars extends Pipeline {
         F.col("gaia_dr3_id").alias("gaia_source_id"),
         F.col("dec"),
         F.col("ra"),
+        F.col("elat"),
+        F.col("elon"),
         F.col("fct_dt"),
         F.col("releasedate").alias("release_date")
       )
@@ -69,7 +71,6 @@ object HostStars extends Pipeline {
       transformeDf.writeTo(tableName)
         .partitionedBy(F.col("fct_dt"))
         .tableProperty("format-version", "2")
-        .tableProperty("write.spark.accept-any-schema", "true")
         .create()
     } else {
       transformeDf.writeTo(tableName)
