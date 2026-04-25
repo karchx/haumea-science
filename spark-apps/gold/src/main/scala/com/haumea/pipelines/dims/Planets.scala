@@ -8,15 +8,12 @@ import java.sql.Connection
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-object Discoveries extends Pipeline {
+object Planets extends Pipeline {
   def createTable(spark: SparkSession, tableName: String): Unit = {
     val createTableQuery = s"""
       CREATE TABLE IF NOT EXISTS $tableName (
-        discovery_sk STRING,
-        discovery_method STRING,
-        discovery_year LONG,
-        discovery_telescope STRING,
-        fct_date DATE
+        planet_sk STRING,
+        planet_name STRING,
       )
       USING iceberg
       TBLPROPERTIES (

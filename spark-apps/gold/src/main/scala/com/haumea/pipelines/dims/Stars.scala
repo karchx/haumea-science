@@ -27,7 +27,9 @@ object Stars extends Pipeline {
     val dfDimStar = dfHostStars.alias("hs")
       .join(dfGaiaSource.alias("gs"), F.col("hs.gaia_source_id") === F.col("gs.source_id"), "left")
       .join(dfGaiaAstro.alias("ga"), F.col("ga.gaia_source_id") === F.col("hs.gaia_source_id"), "left")
+      .withColumn("stars_sk", F.md5(F.concat_ws("||", F.col("hs.host_name"), F.col("hs.gaia_source_id"))))
       .select(
+        F.col("star_sk"),
         F.col("hs.host_name"),
         F.col("hs.gaia_source_id"),
         F.col("gs.ra"),
@@ -41,7 +43,6 @@ object Stars extends Pipeline {
       if (!spark.catalog.tableExists(tableName)) {
         dfDimStar.writeTo(tableName)
           .tableProperty("format-version", "2")
-          .tableProperty("write.spark.accept-any-schema", "true")
           .create()
       } else {
         dfDimStar.writeTo(tableName)
