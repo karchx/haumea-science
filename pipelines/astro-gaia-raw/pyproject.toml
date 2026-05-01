@@ -1,0 +1,12 @@
+[project]
+name = "astro-gaia-raw"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "astroquery>=0.4.11",
+    "boto3>=1.43.0",
+    "polars>=1.40.1",
+    "pyarrow>=24.0.0",
+]
