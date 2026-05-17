@@ -59,3 +59,34 @@ Modify `config.json` to define your environment settings:
    ```bash
    go run main.go
    ```
+
+```
++----------------+      +-------------------+ 
+| NASA Exoplanet |      | Gaia Source DR3   | 
+| API (JSON/CSV) |      | Archive (VOTable) | 
++-------+--------+      +---------+---------+ 
+        |                         |           
+        v                         v           
++---------------------------------------------------------------------+
+|                     StellaDag (Orchestration local)                 |
++---------------------------------------------------------------------+
+        |                         |
+        | Batch Pull              | Batch Pull
+        v                         v
++---------------------------------------------------------------------+
+|                          DATA LAKE                                  |
+|                                                                     |
+|  +--------------+       +--------------+       +--------------+     |
+|  |   BRONZE     | ----> |   SILVER     | ----> |    GOLD      |     |
+|  | (Raw format) | Spark | (Iceberg)    | Spark | (Iceberg)    |     |
+|  +--------------+       +--------------+       +--------------+     |
++---------------------------------------------------------------------+
+                                                          |
+                                                          | PyArrow/DuckDB
+                                                          v
++-----------------------+      +--------------------------------------+
+|  MODEL SERVING        |      |      JUPYTERLAB / MODEL TRAINING     |
+|  Batch Inference      | <--- | XGBoost, scikit-learn, SHAP          |
+|  Delta Table Output   |      | Model Registry (MLflow)              |
++-----------------------+      +--------------------------------------+
+```
