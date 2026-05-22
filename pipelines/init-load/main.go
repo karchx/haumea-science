@@ -230,7 +230,7 @@ func readFileRemoteParquet(ctx context.Context, minioClient *minio.Client, objec
 	defer finalFile.Close()
 
 	var writer *pqarrow.FileWriter
-	var schema *arrow.Schema
+	schema := arrow.NewSchema(TargetFields, nil)
 
 	for objectInfo := range minioClient.ListObjects(ctx, bucketName, opts) {
 		if objectInfo.Err != nil {
@@ -288,46 +288,41 @@ func readFileRemoteParquet(ctx context.Context, minioClient *minio.Client, objec
 
 			defer reader.Release()
 
+			props := parquet.NewWriterProperties(
+				parquet.WithCompression(compress.Codecs.Snappy),
+			)
+
+			writer, err = pqarrow.NewFileWriter(schema, finalFile, props, pqarrow.DefaultWriterProps())
+			if err != nil {
+				return fmt.Errorf("error creating parquet writer: %w", err)
+			}
+
 			for reader.Next() {
 				rec := reader.Record()
+				newCols := make([]arrow.Array, schema.NumFields())
 
-				newCols := make([]arrow.Array, rec.NumCols())
-				for i := 0; i < int(rec.NumCols()); i++ {
-					col := rec.Column(i)
-					if col.DataType().ID() == arrow.STRING {
+				for i := 0; i < schema.NumFields(); i++ {
+					field := schema.Field(i)
+
+					colIdx := rec.Schema().FieldIndices(field.Name)
+					if len(colIdx) == 0 {
+						newCols[i] = array.MakeArrayOfNull(pool, field.Type, int(rec.NumRows()))
+						continue
+					}
+
+					col := rec.Column(colIdx[0])
+
+					if col.DataType().ID() == field.Type.ID() {
 						col.Retain()
 						newCols[i] = col
 					} else {
-						datum := compute.NewDatum(col)
-						castOptions := &compute.CastOptions{
-							ToType: arrow.BinaryTypes.String,
-						}
-						castResult, err := compute.CallFunction(ctx, "cast", castOptions, datum)
+						castOptions := compute.SafeCastOptions(field.Type)
+						castedArr, err := compute.CastArray(ctx, col, castOptions)
 						if err != nil {
-							return fmt.Errorf("Error kernel cast column %s %w", rec.Schema().Field(i).Name, err)
+							return fmt.Errorf("error casting column %s from %s to %s: %w",
+								field.Name, col.DataType(), field.Type, err)
 						}
-
-						newCols[i] = castResult.(*compute.ArrayDatum).MakeArray()
-						castResult.Release()
-						datum.Release()
-					}
-				}
-
-				if schema == nil {
-					fields := make([]arrow.Field, rec.Schema().NumFields())
-					for i := 0; i < rec.Schema().NumFields(); i++ {
-						f := rec.Schema().Field(i)
-						fields[i] = arrow.Field{
-							Name:     f.Name,
-							Type:     arrow.BinaryTypes.String,
-							Nullable: true,
-						}
-					}
-					schema = arrow.NewSchema(fields, nil)
-
-					writer, err = pqarrow.NewFileWriter(schema, finalFile, parquet.NewWriterProperties(), pqarrow.DefaultWriterProps())
-					if err != nil {
-						return fmt.Errorf("error creating parquet writer: %w", err)
+						newCols[i] = castedArr
 					}
 				}
 
