@@ -1,7 +1,7 @@
 package com.haumea.pipelines
 
 import com.haumea.core.Pipeline
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkSession, DataFrame}
 import org.apache.spark.sql.{functions => F, Column}
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -9,6 +9,45 @@ import java.text.SimpleDateFormat
 import java.sql.Connection
 
 object GaiaMainSource extends Pipeline {
+
+  def syncIcebergOrCreate(spark: SparkSession, tableName: String, df: DataFrame): Unit = {
+    if (!spark.catalog.tableExists(tableName)) {
+      df.limit(0).writeTo(tableName)
+        .tableProperty("format-version", "2")
+        .partitionedBy(F.col("fct_dt"))
+        .create()
+
+        spark.sql(s"ALTER TABLE $tableName WRITE ORDERED BY source_id")
+    } else {
+      val existingCols = spark.table(tableName).schema.fieldNames.map(_.toLowerCase).toSet
+      val newFields = df.schema.fields.filter(f => !existingCols.contains(f.name.toLowerCase))
+
+      if (newFields.nonEmpty) {
+        val ddlColumns = newFields.map(f => s"${f.name} ${f.dataType.catalogString}").mkString(", ")
+        spark.sql(s"ALTER TABLE $tableName ADD COLUMNS ($ddlColumns)")
+      }
+    }
+  }
+
+  def merge(spark: SparkSession, tableName: String, stageTable: String) {
+    // deduplicate
+    spark.table(stageTable)
+      .withColumn("rn", F.expr("ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY fct_dt DESC)"))
+      .filter(F.col("rn") === F.lit(1))
+      .drop(F.col("rn"))
+      .createOrReplaceTempView("dedup_stage")
+
+     val mergeQuery = s"""
+      MERGE INTO $tableName t
+       USING dedup_stage s
+       ON t.source_id = s.source_id
+       WHEN MATCHED AND s.fct_dt > t.fct_dt THEN UPDATE SET *
+       WHEN NOT MATCHED THEN INSERT *
+      """
+
+      spark.sql(mergeQuery)
+  }
+
   // ref: https://blog.g-vo.org/healpix-maps-in-general-and-in-gaia.html
   def getHealpixExpr(level: Int, colName: String): Column = {
     require(level >= 0 && level <= 12, "Healpix level must be between 0 and 12")
@@ -25,46 +64,15 @@ object GaiaMainSource extends Pipeline {
     MG.cast("float")
   }
 
-  def writeGaiaMainSource(df: org.apache.spark.sql.DataFrame, tableName: String): Unit = {
-    if (!df.sparkSession.catalog.tableExists(tableName)) {
-      df.writeTo(tableName)
-        .partitionedBy(F.col("fct_dt"))
-        .tableProperty("format-version", "2")
-        .tableProperty("write.parquet.row-group-size-bytes", "33554432") // 32MB
-        .tableProperty("write.spark.accept-any-schema", "true")
-        .create()
-
-      df.sparkSession.sql(s"ALTER TABLE $tableName WRITE ORDERED BY healpix_6")
-    } else {
-      df.writeTo(tableName)
-        .option("mergeSchema", "true")
-        .overwritePartitions()
-    }
-  }
-
-  def writeGaiaAstro(df: org.apache.spark.sql.DataFrame, tableName: String): Unit = {
-    if (!df.sparkSession.catalog.tableExists(tableName)) {
-      df.writeTo(tableName)
-        .partitionedBy(F.col("fct_dt"))
-        .tableProperty("format-version", "2")
-        .tableProperty("write.parquet.row-group-size-bytes", "33554432") // 32MB
-        .tableProperty("write.spark.accept-any-schema", "true")
-        .create()
-    } else {
-      df.writeTo(tableName)
-        .option("mergeSchema", "true")
-        .overwritePartitions()
-    }
-  }
 
   override def run(spark: SparkSession, connection: Connection): Unit = {
     val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
 
     val formatter = new SimpleDateFormat("yyyy-MM-dd")
     val metadata = getMetadata(connection, "silver", "gaia_main_source")
-    val currentOpt = metadata.get("current")
-    val genesisOpt = metadata.get("genesis")
-    val targetDate = currentOpt.getOrElse(genesisOpt.orNull)
+    val currentOpt = metadata.get("current").flatMap(Option(_))
+    val genesisOpt = metadata.get("genesis").flatMap(Option(_))
+    val targetDate = currentOpt.orElse(genesisOpt).orNull
     val defaultDate: String = targetDate match {
       case d: java.sql.Date => formatter.format(d)
       case s: java.sql.Timestamp => formatter.format(s)
@@ -78,62 +86,69 @@ object GaiaMainSource extends Pipeline {
 
     val rawDf = spark.read
       .option("header", "true")
-      .option("inferSchema", "true")
+      .option("mergeSchema", "true")
       .parquet("s3a://gaia-source/bronze/gaia_source/")
 
-    val rawAstroDf = spark.read
-      .option("header", "true")
-      .option("inferSchema", "true")
-      .parquet("s3a://gaia-source/bronze/astrophysical_parameters/")
-    
     val filterDf = rawDf.withColumn("fct_dt", F.make_date(F.col("year"), F.col("month"), F.col("day"))) 
-       .filter(
-         F.col("fct_dt") === defaultDate &&
-         F.col("parallax_over_error") > 10 && // omit SNR
-         F.col("parallax") > 0 &&
-         F.col("ruwe") < 1.4
-       )
+       .filter(F.col("fct_dt") >= defaultDate)
+    
+    val doubleCols = Seq(
+      "ra", "dec", "parallax", "pmra", "pmdec",
+      "phot_g_mean_mag", "bp_rp", "radial_velocity",
+      "parallax_error", "pmra_error", "pmdec_error", 
+      "radial_velocity_error", "ruwe", "astrometric_excess_noise",
+      "astrometric_excess_noise_sig", "teff_gspphot", "logg_gspphot",
+      "mh_gspphot", "parallax_over_error"
+    )
+
+    val doubleCastsMap = doubleCols.map(c => c -> F.col(c).cast("double")).toMap
 
     val castDf = filterDf
-      .withColumn("ra", F.col("ra").cast("float"))
-      .withColumn("dec", F.col("dec").cast("float"))
-      .withColumn("parallax", F.col("parallax").cast("float"))
-      .withColumn("source_id", F.col("source_id").cast("long"))
-      .withColumn("bp_rp", F.col("bp_rp").cast("float"))
-      .withColumn("healpix_6", getHealpixExpr(6, "source_id"))
-      .withColumn("healpix_8", getHealpixExpr(8, "source_id"))
-      .withColumn("absolute_mag_g", calcMagnitudeAbs("parallax", "phot_g_mean_mag"))
-      .dropDuplicates("source_id")
+      .withColumns(doubleCastsMap)
+      .withColumns(Map(
+          "source_id" -> F.col("source_id").cast("string").cast("long"),
+          "healpix_id" -> getHealpixExpr(1, "source_id"),
+          "healpix_6" -> getHealpixExpr(6, "source_id"),
+          "absolute_mag_g" -> calcMagnitudeAbs("parallax", "phot_g_mean_mag"),
+          "fct_dt_string" -> F.date_format(F.col("fct_dt"), "yyyyMMdd"),
+          "is_high_snr" -> (F.col("parallax_over_error") > 10 && F.col("parallax") > 0 && F.col("ruwe") < 1.4)
+      ))
+      .drop(F.col("fct_dt"))
 
-    val dfMainSource = castDf.select(
+    val df = castDf.select(
       F.col("source_id"), 
       F.col("ra"), 
       F.col("dec"), 
       F.col("parallax"), 
-      F.col("healpix_6"), 
-      F.col("fct_dt"),
-      F.col("bp_rp"),
-      F.col("absolute_mag_g"),
-      F.col("healpix_8"),
-      F.col("phot_g_mean_mag"),
       F.col("pmra"),
       F.col("pmdec"),
+      F.col("phot_g_mean_mag"),
+      F.col("bp_rp"),
+      F.col("radial_velocity"),
+      F.col("parallax_over_error"),
+      F.col("parallax_error"),
+      F.col("pmra_error"),
+      F.col("pmdec_error"),
+      F.col("radial_velocity_error"),
+      F.col("ruwe"),
+      F.col("astrometric_excess_noise"),
+      F.col("astrometric_excess_noise_sig"),
+      F.col("teff_gspphot"),
+      F.col("logg_gspphot"),
+      F.col("mh_gspphot"),
+      F.col("phot_variable_flag"),
+      F.col("healpix_6"), 
+      F.col("absolute_mag_g"),
+      F.col("healpix_id"),
+      F.col("fct_dt_string").alias("fct_dt")
     )
+    .drop(F.col("fct_dt_string"))
+    
+    syncIcebergOrCreate(spark, tableName, df)
 
+    df.createOrReplaceTempView("stage_new")
 
-    val filterDfAstro = rawAstroDf.withColumn("fct_dt", F.make_date(F.col("year"), F.col("month"), F.col("day"))) 
-      .filter(F.col("fct_dt") === defaultDate)
-
-    val dfAstro = filterDfAstro.select(
-      F.col("source_id").cast("long").alias("gaia_source_id"), 
-      F.col("fct_dt"),
-      F.col("teff_gspphot").cast("float").alias("teff"),
-      F.col("radius_gspphot").cast("float").alias("stellar_radius"),
-      F.col("lum_flame").cast("float").alias("stellar_luminosity"),
-    ).filter(F.col("source_id").isNotNull)
-
-    writeGaiaMainSource(dfMainSource, tableName)
-    writeGaiaAstro(dfAstro, "lakehouse.silver.gaia_astro")
+    merge(spark, tableName, "stage_new")
 
     val metadataId = metadata.get("id").map(_.toString).getOrElse("gaia_main_source")
     updateMetadata(connection, metadataId, java.sql.Date.valueOf(today))
