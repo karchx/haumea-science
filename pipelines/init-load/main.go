@@ -232,6 +232,15 @@ func readFileRemoteParquet(ctx context.Context, minioClient *minio.Client, objec
 	var writer *pqarrow.FileWriter
 	schema := arrow.NewSchema(TargetFields, nil)
 
+	props := parquet.NewWriterProperties(
+		parquet.WithCompression(compress.Codecs.Snappy),
+	)
+
+	writer, err = pqarrow.NewFileWriter(schema, finalFile, props, pqarrow.DefaultWriterProps())
+	if err != nil {
+		return "", fmt.Errorf("error creating parquet writer: %w", err)
+	}
+
 	for objectInfo := range minioClient.ListObjects(ctx, bucketName, opts) {
 		if objectInfo.Err != nil {
 			return "", fmt.Errorf("List objects err: %w", objectInfo.Err)
@@ -287,15 +296,6 @@ func readFileRemoteParquet(ctx context.Context, minioClient *minio.Client, objec
 			}
 
 			defer reader.Release()
-
-			props := parquet.NewWriterProperties(
-				parquet.WithCompression(compress.Codecs.Snappy),
-			)
-
-			writer, err = pqarrow.NewFileWriter(schema, finalFile, props, pqarrow.DefaultWriterProps())
-			if err != nil {
-				return fmt.Errorf("error creating parquet writer: %w", err)
-			}
 
 			for reader.Next() {
 				rec := reader.Record()
