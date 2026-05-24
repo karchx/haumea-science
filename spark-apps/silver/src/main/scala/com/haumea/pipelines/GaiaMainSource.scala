@@ -41,7 +41,7 @@ object GaiaMainSource extends Pipeline {
       MERGE INTO $tableName t
        USING dedup_stage s
        ON t.source_id = s.source_id
-       WHEN MATCHED AND s.fct_dt > t.fct_dt THEN UPDATE SET *
+       WHEN MATCHED AND t.is_high_snr IS NULL THEN UPDATE SET *
        WHEN NOT MATCHED THEN INSERT *
       """
 
@@ -111,7 +111,7 @@ object GaiaMainSource extends Pipeline {
           "healpix_6" -> getHealpixExpr(6, "source_id"),
           "absolute_mag_g" -> calcMagnitudeAbs("parallax", "phot_g_mean_mag"),
           "fct_dt_string" -> F.date_format(F.col("fct_dt"), "yyyyMMdd"),
-          "is_high_snr" -> (F.col("parallax_over_error") > 10 && F.col("parallax") > 0 && F.col("ruwe") < 1.4)
+          "is_high_snr" -> (F.col("parallax_over_error") > 10).and(F.col("parallax") > 0).and(F.col("ruwe") < 1.4)
       ))
       .drop(F.col("fct_dt"))
 
@@ -140,6 +140,7 @@ object GaiaMainSource extends Pipeline {
       F.col("healpix_6"), 
       F.col("absolute_mag_g"),
       F.col("healpix_id"),
+      F.col("is_high_snr"),
       F.col("fct_dt_string").alias("fct_dt")
     )
     .drop(F.col("fct_dt_string"))
