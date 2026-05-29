@@ -41,7 +41,7 @@ object GaiaMainSource extends Pipeline {
       MERGE INTO $tableName t
        USING dedup_stage s
        ON t.source_id = s.source_id
-       WHEN MATCHED AND t.is_high_snr IS NULL THEN UPDATE SET *
+       WHEN MATCHED THEN UPDATE SET *
        WHEN NOT MATCHED THEN INSERT *
       """
 
@@ -98,7 +98,7 @@ object GaiaMainSource extends Pipeline {
       "parallax_error", "pmra_error", "pmdec_error", 
       "radial_velocity_error", "ruwe", "astrometric_excess_noise",
       "astrometric_excess_noise_sig", "teff_gspphot", "logg_gspphot",
-      "mh_gspphot", "parallax_over_error"
+      "mh_gspphot", "parallax_over_error", "rv_expected_sig_to_noise"
     )
 
     val doubleCastsMap = doubleCols.map(c => c -> F.col(c).cast("double")).toMap
@@ -141,7 +141,11 @@ object GaiaMainSource extends Pipeline {
       F.col("absolute_mag_g"),
       F.col("healpix_id"),
       F.col("is_high_snr"),
-      F.col("fct_dt_string").alias("fct_dt")
+      F.col("fct_dt_string").alias("fct_dt"),
+      F.col("rv_expected_sig_to_noise"),
+      F.col("ipd_gof_harmonic_amplitude"),
+      F.col("ipd_frac_multi_peak"),
+      F.col("non_single_star")
     )
     .drop(F.col("fct_dt_string"))
     
