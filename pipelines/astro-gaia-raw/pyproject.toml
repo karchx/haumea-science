@@ -7,6 +7,7 @@ requires-python = ">=3.14"
 dependencies = [
     "astroquery>=0.4.11",
     "boto3>=1.43.0",
+    "healpy>=1.19.0",
     "pandas>=3.0.3",
     "polars>=1.40.1",
     "pyarrow>=24.0.0",

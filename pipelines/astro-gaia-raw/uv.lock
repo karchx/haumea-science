@@ -14,6 +14,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "astroquery" },
     { name = "boto3" },
+    { name = "healpy" },
     { name = "pandas" },
     { name = "polars" },
     { name = "pyarrow" },
@@ -24,6 +25,7 @@ dependencies = [
 requires-dist = [
     { name = "astroquery", specifier = ">=0.4.11" },
     { name = "boto3", specifier = ">=1.43.0" },
+    { name = "healpy", specifier = ">=1.19.0" },
     { name = "pandas", specifier = ">=3.0.3" },
     { name = "polars", specifier = ">=1.40.1" },
     { name = "pyarrow", specifier = ">=24.0.0" },
@@ -236,6 +238,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/94/87/f2b6c374a82cf076cfa1416992ac8e8ec94d79facc37aec87c1a5cb72352/cryptography-47.0.0-cp38-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:2207a498b03275d0051589e326b79d4cf59985c99031b05bb292ac52631c37fe", size = 4688262, upload-time = "2026-04-24T19:54:26.946Z" },
     { url = "https://files.pythonhosted.org/packages/14/e2/8b7462f4acf21ec509616f0245018bb197194ab0b65c2ea21a0bdd53c0eb/cryptography-47.0.0-cp38-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:7a02675e2fabd0c0fc04c868b8781863cbf1967691543c22f5470500ff840b31", size = 4775506, upload-time = "2026-04-24T19:54:28.926Z" },
     { url = "https://files.pythonhosted.org/packages/70/75/158e494e4c08dc05e039da5bb48553826bd26c23930cf8d3cd5f21fa8921/cryptography-47.0.0-cp38-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:80887c5cbd1774683cb126f0ab4184567f080071d5acf62205acb354b4b753b7", size = 4912060, upload-time = "2026-04-24T19:54:30.869Z" },
+]
+
+[[package]]
+name = "healpy"
+version = "1.19.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "astropy" },
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e3/4e/6f5328f375f88c8c38314f24f82b7e1486ec0358c557779500382db1503c/healpy-1.19.0.tar.gz", hash = "sha256:28e839cb885a23d36c77fc3423a3cb9271a07fda94085bd12fc329f941130ec5", size = 4075006, upload-time = "2025-12-02T08:27:19.766Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/14/0ef2e671f75f209d7ac813ed04ba80be82ca30cf517d7c65782a495718be/healpy-1.19.0-cp314-cp314-macosx_13_0_x86_64.whl", hash = "sha256:75179a3681d2e2bfcfe7b33171cbb520be914453062217e6beac15f3c11f9a63", size = 1723861, upload-time = "2025-12-02T08:27:09.971Z" },
+    { url = "https://files.pythonhosted.org/packages/0d/eb/2136bbbfca816308136eefe331c346187935402d0a2f306f0e2eab9559c8/healpy-1.19.0-cp314-cp314-macosx_14_0_arm64.whl", hash = "sha256:52cbcaacdb1ff252ce8edd39d07d44e47666cc09c471bdd8eb1ee472773bafb4", size = 2591225, upload-time = "2025-12-02T08:27:11.026Z" },
+    { url = "https://files.pythonhosted.org/packages/70/ad/e511e15fedc11f7d3529440fc90333fb03fbf93a6339b70c4b5992d849d0/healpy-1.19.0-cp314-cp314-macosx_15_0_arm64.whl", hash = "sha256:6236f8b900ae7914c8c3c04d3ddd9a01c695e001798e334d2bffb989603bc46b", size = 2591177, upload-time = "2025-12-02T08:27:12.511Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/ca/f583967e1395e41608225d0a6d29e582236f615d83023d730e63bac89baa/healpy-1.19.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:b3cf9c627af77a3fc670d6240d8a83485f373c274945ca8ad156fc2a25d6eb61", size = 8172544, upload-time = "2025-12-02T08:27:13.684Z" },
+    { url = "https://files.pythonhosted.org/packages/85/ae/80a5e0d36ee51e72b27fb8e11d0d43dfb3f8e2ccc315a38865a2ccd5ed73/healpy-1.19.0-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:c22360ad7ec6f16bdbb650dececf52d21f7f0e03a943eb1a1046fdb9c51a3c5e", size = 8198134, upload-time = "2025-12-02T08:27:15.156Z" },
+    { url = "https://files.pythonhosted.org/packages/36/7b/34b9954fdf76b1f5ab0a76228650c2575b189fb6f9f7865c98477a46086d/healpy-1.19.0-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:1a479826c1d6ae8312476e079a3f5c7aa3e40911d74f2d7069adcd62e98604ad", size = 8986426, upload-time = "2025-12-02T08:27:16.417Z" },
+    { url = "https://files.pythonhosted.org/packages/94/df/bb3ef51f423c62576fb0775fe72f0d2028a10e3ffb20b4fc76146ea8757b/healpy-1.19.0-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:a103e327102e124785c1b5bdd379c6e5469137633212b56a6196bf04ddd100ff", size = 9307512, upload-time = "2025-12-02T08:27:18.03Z" },
 ]
 
 [[package]]
