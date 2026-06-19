@@ -1,9 +1,9 @@
 [
     {
-      "source": "raw/gaia-source",
+      "source": "raw",
       "dest": "bronze",
       "format": "parquet",
-      "table_name": "gaia_source",
+      "table_name": "aries_star_cluster",
       "partitions": [
         {
             "partition_key": "year",

@@ -8,7 +8,7 @@ spec:
     spec:
       containers:
       - name: init-load-gaia
-        image: 192.168.0.9:32000/init-load-haumea:1.1.1
+        image: 192.168.0.9:32000/init-load-haumea:1.2.0
         imagePullPolicy: Always
         resources:
           requests:
