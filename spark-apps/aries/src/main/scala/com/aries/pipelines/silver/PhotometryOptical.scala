@@ -23,22 +23,23 @@ object Transformations {
 }
 
 object PhotometryOptical extends Pipeline {
-  def merge(spark: SparkSession, tableName: String, stageTable: String) {
-    spark.table(stageTable)
+  def overwriteDynamicIO(df: DataFrame, tableName: String): IO[Unit] = IO.blocking {
+    df
       .withColumn("rn", F.expr("ROW_NUMBER() OVER (PARTITION BY external_id ORDER BY fct_dt DESC)"))
       .filter(F.col("rn") === F.lit(1))
       .drop(F.col("rn"))
-      .createOrReplaceTempView("dedup_stage")
+      .writeTo(tableName)
+      .overwritePartitions()
   }
 
   override def runPipeline(spark: SparkSession, connection: Connection): IO[Unit] = {
     val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
 
-    val tableName = "lakehouse.silver.photometry_optical"
+    val tableName = "`datalake-haumea`.silver.photometry_optical"
 
     for {
       _ <- IO.println(s"--- Init pipeline $tableName ---")
-      metadata <- getMetadata(connection, "silver", tableName)
+      metadata <- getMetadata(connection, "silver", "photometry_optical")
       _ <- IO.println(s"Metadata job: $metadata")
       currentOpt = metadata.get("current").flatMap(Option(_))
       genesisOpt = metadata.get("genesis").flatMap(Option(_))
@@ -69,9 +70,9 @@ object PhotometryOptical extends Pipeline {
         partitionCol = "fct_dt",
         sortCols = Seq("external_id")
       )
+      _ <- overwriteDynamicIO(dfFinal, tableName)
+
       _ <- IO.blocking {
-        dfFinal.createOrReplaceTempView("stage_new")
-        merge(spark, tableName, "stage_new")
         val metadataId = metadata.get("id").map(_.toString).getOrElse("photometry_optical")
         updateMetadata(connection, metadataId, java.sql.Date.valueOf(today))
       }

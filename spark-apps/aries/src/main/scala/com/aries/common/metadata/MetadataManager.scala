@@ -3,7 +3,6 @@ package com.aries.common.metadata
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-
 object MetadataManager {
   def getTargetDate(currentOpt: Option[Any], genesisOpt: Option[Any]): String = {
       val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))

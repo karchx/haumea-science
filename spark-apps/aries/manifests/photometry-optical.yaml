@@ -27,18 +27,26 @@ spec:
 
     # Iceberg configuration
     "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
-    "spark.sql.catalog.lakehouse": "org.apache.iceberg.spark.SparkCatalog"
-    "spark.sql.catalog.lakehouse.type": "jdbc"
-    "spark.sql.catalog.lakehouse.uri": "jdbc:postgresql://postgres-postgresql.platform.svc.cluster.local:5432/iceberg_db"
-    "spark.sql.catalog.lakehouse.jdbc.user": "platform"
-    "spark.sql.catalog.lakehouse.jdbc.password": "changeme123"
-    "spark.sql.catalog.lakehouse.warehouse": "s3a://gaia-source/"
-    "spark.sql.catalog.lakehouse.io-impl": "org.apache.iceberg.aws.s3.S3FileIO"
+    "spark.sql.defaultCatalog": "datalake-haumea"
+    "spark.sql.catalog.datalake-haumea": "org.apache.iceberg.spark.SparkCatalog"
+    "spark.sql.catalog.datalake-haumea.catalog-impl": "org.apache.iceberg.rest.RESTCatalog"
+    "spark.sql.catalog.datalake-haumea.uri": "http://lakekeeper.platform.svc.cluster.local:8181/catalog/"
+    "spark.sql.catalog.datalake-haumea.token": "dummy"
+    "spark.sql.catalog.datalake-haumea.warehouse": "datalake-haumea"
 
-    # S3FILEIO configuration
-    "spark.sql.catalog.lakehouse.s3.endpoint": "http://minio.platform:9000"
-    "spark.sql.catalog.lakehouse.s3.path-style-access": "true"
-    "spark.sql.catalog.lakehouse.client.region": "us-east-1"
+
+    # "spark.sql.catalog.lakehouse": "org.apache.iceberg.spark.SparkCatalog"
+    # "spark.sql.catalog.lakehouse.type": "jdbc"
+    # "spark.sql.catalog.lakehouse.uri": "jdbc:postgresql://postgres-postgresql.platform.svc.cluster.local:5432/iceberg_db"
+    # "spark.sql.catalog.lakehouse.jdbc.user": "platform"
+    # "spark.sql.catalog.lakehouse.jdbc.password": "changeme123"
+    # "spark.sql.catalog.lakehouse.warehouse": "s3a://gaia-source/"
+    # "spark.sql.catalog.lakehouse.io-impl": "org.apache.iceberg.aws.s3.S3FileIO"
+
+    # # S3FILEIO configuration
+    # "spark.sql.catalog.lakehouse.s3.endpoint": "http://minio.platform:9000"
+    # "spark.sql.catalog.lakehouse.s3.path-style-access": "true"
+    # "spark.sql.catalog.lakehouse.client.region": "us-east-1"
 
   
   hadoopConf:
