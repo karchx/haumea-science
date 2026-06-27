@@ -21,11 +21,11 @@ spec:
         - name: AWS_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
-              name: starexoplanet-credentials
-              key: AWS_ACCESS_KEY
+              name: s3-credentials
+              key: accessKey
         - name: AWS_SECRET_ACCESS_KEY
           valueFrom:
             secretKeyRef:
-              name: starexoplanet-credentials
-              key: AWS_SECRET_KEY
+              name: s3-credentials
+              key: secretKey
       restartPolicy: Never

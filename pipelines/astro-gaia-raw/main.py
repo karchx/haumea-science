@@ -142,7 +142,7 @@ def extract_aries_data():
         # Cross match
         logging.info("Cross-match init...")
 
-        max_sep = 0.25 * u.deg
+        max_sep = 1.0 * u.deg
         idx_simbad, idx_gaia, d2d, d3d = search_around_sky(coords_simbad, coords_gaia, max_sep)
         logging.info(f"Cross-match. {len(idx_simbad)} find clusters.")
 

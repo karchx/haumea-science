@@ -8,17 +8,17 @@ spec:
     spec:
       containers:
       - name: astroraw
-        image: 192.168.0.9:32000/astro-gaia-raw:1.0.7
-        imagePullPolicy: Always
+        image: 192.168.0.9:32000/astro-gaia-raw:1.0.8
+        imagePullPolicy: IfNotPresent
         env:
         - name: AWS_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
-              name: starexoplanet-credentials
-              key: AWS_ACCESS_KEY
+              name: s3-credentials
+              key: accessKey
         - name: AWS_SECRET_ACCESS_KEY
           valueFrom:
             secretKeyRef:
-              name: starexoplanet-credentials
-              key: AWS_SECRET_KEY
+              name: s3-credentials
+              key: secretKey
       restartPolicy: Never
