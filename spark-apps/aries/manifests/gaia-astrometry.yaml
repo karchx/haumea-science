@@ -1,14 +1,14 @@
 apiVersion: "sparkoperator.k8s.io/v1beta2"
 kind: SparkApplication
 metadata:
-  name: silver-photometry-optical
+  name: silver-gaia-astrometry
   namespace: de
 spec:
   type: Scala
   mode: cluster
   image: "192.168.0.9:32000/silver-haumea:1.0.0"
   imagePullPolicy: IfNotPresent
-  mainClass: "com.aries.pipelines.silver.PhotometryOptical"
+  mainClass: "com.aries.pipelines.silver.GaiaAstrometry"
   mainApplicationFile: "s3a://pipelines/haumea/spark-aries-assembly-0.1.0.jar"
   sparkVersion: "3.5.1"
   sparkConf:
@@ -33,6 +33,7 @@ spec:
     "spark.sql.catalog.datalake-haumea.uri": "http://lakekeeper.platform.svc.cluster.local:8181/catalog/"
     "spark.sql.catalog.datalake-haumea.token": "dummy"
     "spark.sql.catalog.datalake-haumea.warehouse": "datalake-haumea"
+
   
   hadoopConf:
     "fs.s3a.aws.credentials.provider": "com.amazonaws.auth.EnvironmentVariableCredentialsProvider"

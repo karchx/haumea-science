@@ -2,6 +2,8 @@ package com.aries.core
 
 import cats.effect.{IO, IOApp, Resource}
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{functions => F}
 import java.sql.{DriverManager, Connection, ResultSet}
 
 trait Pipeline extends IOApp.Simple {
@@ -32,6 +34,10 @@ trait Pipeline extends IOApp.Simple {
     } { spark =>
       IO.delay(spark.stop())
     }
+  }
+
+  def insertFactibleDate(df: DataFrame): DataFrame = {
+    df.withColumn("fct_dt", F.make_date(F.col("year"), F.col("month"), F.col("day"))) 
   }
 
   def getMetadata(connection: Connection, layer: String, jobName: String): IO[Map[String, Any]] = IO.blocking {
