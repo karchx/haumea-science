@@ -12,7 +12,8 @@ import org.apache.spark.sql.{functions => F}
 
 object Transformations {
   def insertFactibleDate(df: DataFrame): DataFrame = {
-    df.withColumn("fct_dt", F.make_date(F.col("year"), F.col("month"), F.col("day"))) 
+    // save date: YYYYMMDD
+    df.withColumn("fct_dt", F.concat(F.col("year"), F.col("month"), F.col("day"))) 
   }
 
   def applyPhotometryOpticalExtract(df: DataFrame): DataFrame = {
@@ -46,12 +47,20 @@ object PhotometryOptical extends Pipeline {
       defaultDate = MetadataManager.getTargetDate(currentOpt, genesisOpt)
       _ <- IO.println(s"Metadata job: $defaultDate")
 
+      bronzeCols = Seq(
+        "source_id",
+        "j_m",
+        "h_m",
+        "ks_m",
+        "year",
+        "month",
+        "day"
+      )
+      ariesClusterRawDF <- IcebergManager.readDf(spark, "s3a://gaia-source/bronze/aries_star_cluster/", Some(bronzeCols))
+      ariesGaiaRawDF <- IcebergManager.readDf(spark, "s3a://gaia-source/bronze/aries_gaia/", Some(bronzeCols))
 
       bronzeRawDF <- IO.delay {
-        spark.read
-          .option("header", "true")
-          .option("mergeSchema", "true")
-          .parquet("s3a://gaia-source/bronze/aries_star_cluster/")
+        ariesClusterRawDF.union(ariesGaiaRawDF)
       }
 
       silverDf = Transformations.insertFactibleDate(bronzeRawDF).select(

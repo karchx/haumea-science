@@ -17,7 +17,6 @@ AWS_ACCESS_KEY_ID = os.environ['AWS_ACCESS_KEY_ID']
 AWS_SECRET_ACCESS_KEY = os.environ['AWS_SECRET_ACCESS_KEY']
 BUCKET_NAME = os.environ.get('BUCKET_NAME', 'gaia-source')
 
-Gaia.ROW_LIMIT = -1
 
 S3_PREFIX="raw"
 
@@ -56,6 +55,7 @@ def calculate_r_final(ra_center, dec_center) -> int:
     return np.clip(r_dynamic, R_MIN, R_MAX)
 
 def astroquery_data_missions(max_retries: int, temp_votable: str):
+    Gaia.ROW_LIMIT = -1
     def query_gaia(ra_center, dec_center, r_final):
         return f"""
             SELECT
@@ -75,38 +75,39 @@ def astroquery_data_missions(max_retries: int, temp_votable: str):
                 tmass.ks_m,
                 xmatch.angular_distance AS angular_distance_arcsec
             FROM gaiadr3.gaia_source AS g
-            JOIN gaiadr3.tmass_psc_xsc_best_neighbour AS xmatch
+            LEFT JOIN gaiadr3.tmass_psc_xsc_best_neighbour AS xmatch
               ON g.source_id = xmatch.source_id
-            JOIN gaiadr3.tmass_psc_xsc_join AS xjoin 
-                ON xmatch.clean_tmass_psc_xsc_oid = xjoin.clean_tmass_psc_xsc_oid
-            JOIN gaiadr1.tmass_original_valid AS tmass 
+            LEFT JOIN gaiadr3.tmass_psc_xsc_join AS xjoin 
+                 ON xmatch.clean_tmass_psc_xsc_oid = xjoin.clean_tmass_psc_xsc_oid
+            LEFT JOIN gaiadr1.tmass_original_valid AS tmass 
                 ON xjoin.original_psc_source_id = tmass.designation
             WHERE 1=CONTAINS(POINT('ICRS', g.ra, g.dec), CIRCLE('ICRS', {ra_center}, {dec_center}, {r_final}))
         """
 
     try:
+        RADIUS = 5.0
         coord = SkyCoord('02h07m10.40s', '+23d27m44.7s', frame='icrs')
-        table_simbad = Simbad.query_region(coord, radius='1d')
+        table_simbad = Simbad.query_region(coord, radius=f'{RADIUS}d')
         if table_simbad is None:
             raise ValueError("SIMBAD not data")
 
         ra_center = coord.ra.deg
         dec_center = coord.dec.deg
 
-        r_final = calculate_r_final(ra_center, dec_center)
+        # r_final = calculate_r_final(ra_center, dec_center)
 
         valid_mask = ~table_simbad['ra'].mask & ~table_simbad['dec'].mask
         table_simbad = table_simbad[valid_mask]
         coords_simbad = SkyCoord(table_simbad['ra'], table_simbad['dec'], unit=(u.hourangle, u.deg))
-        logging.info(f"Ra Center: {ra_center:.2f} obs/deg2 | Dec Center: {dec_center:.2f} | Final Radius: {r_final:.4f} deg")
+        logging.info(f"Ra Center: {ra_center:.2f} obs/deg2 | Dec Center: {dec_center:.2f} | Final Radius: {RADIUS:.4f} deg")
 
-        query_gaia_str = query_gaia(ra_center, dec_center, r_final)
+        query_gaia_str = query_gaia(ra_center, dec_center, RADIUS)
         logging.info("Async and download in disk...")
         logging.info(f"{query_gaia_str}")
 
         for attempt in range(max_retries):
             try:
-                job = Gaia.launch_job(query=query_gaia_str)
+                job = Gaia.launch_job_async(query=query_gaia_str)
                 table_gaia = job.get_results()
                 table_gaia.write(temp_votable, format="votable", overwrite=True)
                 break
@@ -121,6 +122,69 @@ def astroquery_data_missions(max_retries: int, temp_votable: str):
     except Exception:
         logging.error(f"Error extract data astroquery", exc_info=True)
         sys.exit(1)
+
+def extract_individual_aries():
+    temp_votable = "aries_temp.vot.gz"
+    s3_key_gaia = f"{S3_PREFIX}/aries_gaia/data.parquet"
+    s3_key_simbad = f"{S3_PREFIX}/aries_simbad/data.parquet"
+    try:
+        max_retries = 3
+        coords_simbad, table_simbad = astroquery_data_missions(max_retries, temp_votable) 
+
+        logging.info("Process VOTable...")
+        table_gaia = Table.read(temp_votable)
+        if len(table_gaia) == 0:
+            logging.warning("Empty VOTable")
+            return
+
+        logging.info("Init...")
+
+        df_gaia = pl.DataFrame({
+            "source_id": np.array(table_gaia['source_id']),
+            "ra": np.array(table_gaia['ra']),
+            "dec": np.array(table_gaia['dec']),
+            "parallax": np.array(table_gaia['parallax']),
+            "parallax_error": np.array(table_gaia['parallax_error']),
+            "pmra": np.array(table_gaia['pmra']),
+            "pmdec": np.array(table_gaia['pmdec']),
+            "phot_g_mean_mag": np.array(table_gaia['phot_g_mean_mag']),
+            "phot_bp_mean_mag": np.array(table_gaia["phot_bp_mean_mag"]),
+            "phot_rp_mean_mag": np.array(table_gaia["phot_rp_mean_mag"]),
+            "j_m": np.array(table_gaia["j_m"]),
+            "h_m": np.array(table_gaia["h_m"]),
+            "ks_m": np.array(table_gaia["ks_m"]),
+            "ruwe": np.array(table_gaia['ruwe']),
+            "angular_distance_arcsec": np.array(table_gaia['angular_distance_arcsec'])
+        })
+        
+        gaia_parquet = "gaia_pure.parquet"
+        df_gaia.write_parquet(gaia_parquet, compression='snappy')
+
+        logging.info("Proccess data SIMBAD...")
+        df_simbad = pl.DataFrame({
+            "main_id": np.array(table_simbad["main_id"]).astype(str),
+            "ra_deg": coords_simbad.ra.deg,
+            "dec_deg": coords_simbad.dec.deg
+        })
+        simbad_parquet = "simbad_pure.parquet"
+        df_simbad.write_parquet(simbad_parquet, compression='snappy')
+
+        s3_client = get_s3_client()
+        
+        logging.info("Upload Gaia Data...")
+        s3_client.upload_file(gaia_parquet, BUCKET_NAME, s3_key_gaia)
+        
+        logging.info("Upload SIMBAD Data..")
+        s3_client.upload_file(simbad_parquet, BUCKET_NAME, s3_key_simbad)
+        
+        logging.info("EXTRACTION COMPLETED")
+    except Exception:
+        logging.error(f"Error in load", exc_info=True)
+        sys.exit(1)
+    finally:
+        for f in [temp_votable, "gaia_pure.parquet", "simbad_pure.parquet"]:
+            if os.path.exists(f):
+                os.remove(f)
 
 def extract_aries_data(): 
     temp_votable = "aries_temp.vot.gz"
@@ -192,7 +256,7 @@ def extract_aries_data():
 
 def main():
     logging.info("="*50)
-    extract_aries_data()
+    extract_individual_aries()
     logging.info("="*50)
 
 if __name__ == "__main__":

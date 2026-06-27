@@ -18,5 +18,45 @@
             "partition_value": "current_day"
         }
       ]
+    },
+    {
+      "source": "raw/aries_gaia",
+      "dest": "bronze",
+      "format": "parquet",
+      "table_name": "aries_gaia",
+      "partitions": [
+        {
+            "partition_key": "year",
+            "partition_value": "current_year"
+        },
+        {
+            "partition_key": "month",
+            "partition_value": "current_month"
+        },
+        {
+            "partition_key": "day",
+            "partition_value": "current_day"
+        }
+      ]
+    },
+    {
+      "source": "raw/aries_simbad",
+      "dest": "bronze",
+      "format": "parquet",
+      "table_name": "aries_simbad",
+      "partitions": [
+        {
+            "partition_key": "year",
+            "partition_value": "current_year"
+        },
+        {
+            "partition_key": "month",
+            "partition_value": "current_month"
+        },
+        {
+            "partition_key": "day",
+            "partition_value": "current_day"
+        }
+      ]
     }
 ]

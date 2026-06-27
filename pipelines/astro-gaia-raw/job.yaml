@@ -8,8 +8,8 @@ spec:
     spec:
       containers:
       - name: astroraw
-        image: 192.168.0.9:32000/astro-gaia-raw:1.0.8
-        imagePullPolicy: IfNotPresent
+        image: 192.168.0.9:32000/astro-gaia-raw:1.12.0
+        imagePullPolicy: Always
         env:
         - name: AWS_ACCESS_KEY_ID
           valueFrom:

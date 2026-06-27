@@ -33,4 +33,15 @@ object IcebergManager {
       }
     }
   }
+
+  def readDf(spark: SparkSession, path: String, cols: Option[Seq[String]]): IO[DataFrame] = 
+    IO.delay {
+      val df = spark.read
+          .option("header", "true")
+          .option("mergeSchema", "true")
+          .parquet(path)
+      cols.filter(_.nonEmpty) 
+        .map(cs => df.select(cs.map(col): _*))
+        .getOrElse(df)
+    }
 }
