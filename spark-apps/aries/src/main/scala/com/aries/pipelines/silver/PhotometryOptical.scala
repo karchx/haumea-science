@@ -78,7 +78,9 @@ object PhotometryOptical extends Pipeline {
         F.col("h_m"),
         F.col("ks_m"),
         F.col("fct_dt"),
-        F.col("healpix_index")
+        F.col("healpix_index"),
+        F.col("ra"),
+        F.col("dec"),
       )
       .as[AstroSilver]
 
