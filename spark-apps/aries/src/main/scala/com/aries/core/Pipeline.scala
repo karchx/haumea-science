@@ -36,10 +36,6 @@ trait Pipeline extends IOApp.Simple {
     }
   }
 
-  def insertFactibleDate(df: DataFrame): DataFrame = {
-    df.withColumn("fct_dt", F.make_date(F.col("year"), F.col("month"), F.col("day"))) 
-  }
-
   def getMetadata(connection: Connection, layer: String, jobName: String): IO[Map[String, Any]] = IO.blocking {
     val query = s"SELECT * FROM spark_apps_metadata WHERE layer = '$layer' AND pipeline = '$jobName'"
     val statement = connection.createStatement()

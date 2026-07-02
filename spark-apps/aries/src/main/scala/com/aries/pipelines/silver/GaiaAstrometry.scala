@@ -1,14 +1,17 @@
 package com.aries.pipelines.silver
 
-import com.aries.core.Pipeline
-import com.aries.common.iceberg.IcebergManager
-import com.aries.common.metadata.MetadataManager
 import cats.effect.IO
 import java.sql.Connection
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.{functions => F}
+
+import com.aries.core.Pipeline
+import com.aries.common.iceberg.IcebergManager
+import com.aries.common.metadata.MetadataManager
+import com.aries.models.silver.GaiaSilver
+import com.aries.transformations.Astrophysics._
 
 object GaiaAstrometry extends Pipeline {
   def overwriteDynamicIO(df: DataFrame, tableName: String): IO[Unit] = IO.blocking {
@@ -16,25 +19,44 @@ object GaiaAstrometry extends Pipeline {
       .withColumn("rn", F.expr("ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY fct_dt DESC)"))
       .filter(F.col("rn") === F.lit(1))
       .drop(F.col("rn"))
+      .sortWithinPartitions("healpix_index")
       .writeTo(tableName)
       .overwritePartitions()
   }
 
   override def runPipeline(spark: SparkSession, connection: Connection): IO[Unit] = {
+    import spark.implicits._
     val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
     val tableName = "`datalake-haumea`.silver.gaia_astrometry"
     for {
       _ <- IO.println(s"--- Init pipeline $tableName ---")
       metadata <- getMetadata(connection, "silver", "gaia_astrometry")
 
-      bronzeRawDF <- IO.delay {
-        spark.read
-          .option("header", "true")
-          .option("mergeSchema", "true")
-          .parquet("s3a://gaia-source/bronze/aries_star_cluster/")
+      bronzeCols = Seq(
+        "source_id",
+        "ra",
+        "dec",
+        "parallax",
+        "parallax_error",
+        "pmra",
+        "pmdec",
+        "ruwe",
+        "year",
+        "month",
+        "day"
+      )
+
+      ariesClusterRawDF <- IcebergManager.readDf(spark, "s3a://gaia-source/bronze/aries_star_cluster/", Some(bronzeCols))
+      ariesGaiaRawDF <- IcebergManager.readDf(spark, "s3a://gaia-source/bronze/aries_gaia/", Some(bronzeCols))
+
+      bronzeRawDF <- IO.delay(ariesClusterRawDF.unionByName(ariesGaiaRawDF).filter(F.col("source_id").isNotNull))
+
+      dfTransformed <- IO.delay {
+          bronzeRawDF.withHealpixIndex(raCol = "ra", decCol = "dec")
+            .withColumn("fct_dt", F.concat(F.col("year"), F.col("month"), F.col("day")))
       }
 
-      dfFinal = insertFactibleDate(bronzeRawDF).select(
+      dfFinalDs: Dataset[GaiaSilver] = dfTransformed.select(
         F.col("source_id"),
         F.col("ra"),
         F.col("dec"),
@@ -43,15 +65,19 @@ object GaiaAstrometry extends Pipeline {
         F.col("pmra"),
         F.col("pmdec"),
         F.col("ruwe"),
-        F.col("fct_dt")
+        F.col("fct_dt"),
+        F.col("healpix_index")
       )
+        .as[GaiaSilver]
+
+      dfFinal = dfFinalDs.toDF()
 
       _ <- IcebergManager.syncIcebergOrCreate(
         spark = spark,
         tableName = tableName,
         df = dfFinal,
-        partitionCol = "fct_dt",
-        sortCols = Seq("source_id")
+        partitionCol = "healpix_index",
+        sortCols = Seq("healpix_index")
       )
       _ <- overwriteDynamicIO(dfFinal, tableName)
 

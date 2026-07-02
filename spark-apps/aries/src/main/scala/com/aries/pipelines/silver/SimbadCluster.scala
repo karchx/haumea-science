@@ -4,25 +4,15 @@ import cats.effect.IO
 import java.sql.Connection
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.{functions => F}
 
 import com.aries.core.Pipeline
 import com.aries.common.iceberg.IcebergManager
 import com.aries.common.metadata.MetadataManager
-import com.aries.models.silver.AstroSilver
 import com.aries.transformations.Astrophysics._
 
-object Transformations {
-  def applyPhotometryOpticalExtract(df: DataFrame): DataFrame = {
-    df.withColumns(Map(
-      "catalog_name" -> F.lit("2MASS")
-    ))
-  }
-}
-
-object PhotometryOptical extends Pipeline {
+object SimbadCluster extends Pipeline {
   def overwriteDynamicIO(df: DataFrame, tableName: String): IO[Unit] = IO.blocking {
     df
       .withColumn("rn", F.expr("ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY fct_dt DESC)"))
@@ -36,51 +26,48 @@ object PhotometryOptical extends Pipeline {
   override def runPipeline(spark: SparkSession, connection: Connection): IO[Unit] = {
     import spark.implicits._
     val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-
-    val tableName = "`datalake-haumea`.silver.photometry_optical"
-
+    val tableName = "`datalake-haumea`.silver.simbad_cluster"
     for {
       _ <- IO.println(s"--- Init pipeline $tableName ---")
-      metadata <- getMetadata(connection, "silver", "photometry_optical")
-      _ <- IO.println(s"Metadata job: $metadata")
-      currentOpt = metadata.get("current").flatMap(Option(_))
-      genesisOpt = metadata.get("genesis").flatMap(Option(_))
-      defaultDate = MetadataManager.getTargetDate(currentOpt, genesisOpt)
-      _ <- IO.println(s"Metadata job: $defaultDate")
+      metadata <- getMetadata(connection, "silver", "simbad_cluster")
 
       bronzeCols = Seq(
         "source_id",
-        "j_m",
-        "h_m",
-        "ks_m",
+        "ra",
+        "dec",
+        "parallax",
+        "parallax_error",
+        "pmra",
+        "pmdec",
+        "ruwe",
         "year",
         "month",
-        "day",
-        "ra",
-        "dec"
+        "day"
       )
+
       ariesClusterRawDF <- IcebergManager.readDf(spark, "s3a://gaia-source/bronze/aries_star_cluster/", Some(bronzeCols))
       ariesGaiaRawDF <- IcebergManager.readDf(spark, "s3a://gaia-source/bronze/aries_gaia/", Some(bronzeCols))
 
       bronzeRawDF <- IO.delay(ariesClusterRawDF.unionByName(ariesGaiaRawDF).filter(F.col("source_id").isNotNull))
 
       dfTransformed <- IO.delay {
-        // use transformations.Astrophysics
-        Transformations.applyPhotometryOpticalExtract(
           bronzeRawDF.withHealpixIndex(raCol = "ra", decCol = "dec")
-        )
-          .withColumn("fct_dt", F.concat(F.col("year"), F.col("month"), F.col("day")))
+            .withColumn("fct_dt", F.concat(F.col("year"), F.col("month"), F.col("day")))
       }
 
-      dfFinalDs: Dataset[AstroSilver] = dfTransformed.select(
+      dfFinalDs: Dataset[GaiaSilver] = dfTransformed.select(
         F.col("source_id"),
-        F.col("j_m"),
-        F.col("h_m"),
-        F.col("ks_m"),
+        F.col("ra"),
+        F.col("dec"),
+        F.col("parallax"),
+        F.col("parallax_error"),
+        F.col("pmra"),
+        F.col("pmdec"),
+        F.col("ruwe"),
         F.col("fct_dt"),
         F.col("healpix_index")
       )
-      .as[AstroSilver]
+        .as[GaiaSilver]
 
       dfFinal = dfFinalDs.toDF()
 
@@ -94,7 +81,8 @@ object PhotometryOptical extends Pipeline {
       _ <- overwriteDynamicIO(dfFinal, tableName)
 
       _ <- IO.blocking {
-        val metadataId = metadata.get("id").map(_.toString).getOrElse("photometry_optical")
+        val metadataId = metadata.get("id").map(_.toString).getOrElse("gaia_astrometry")
+        IO.println(s"MetadataId: $metadataId")
         updateMetadata(connection, metadataId, java.sql.Date.valueOf(today))
       }
       _ <- IO.println(s"--- End pipeline $tableName ---")
