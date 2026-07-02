@@ -15,9 +15,6 @@ import com.aries.transformations.Astrophysics._
 object SimbadCluster extends Pipeline {
   def overwriteDynamicIO(df: DataFrame, tableName: String): IO[Unit] = IO.blocking {
     df
-      .withColumn("rn", F.expr("ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY fct_dt DESC)"))
-      .filter(F.col("rn") === F.lit(1))
-      .drop(F.col("rn"))
       .sortWithinPartitions("healpix_index")
       .writeTo(tableName)
       .overwritePartitions()
@@ -32,44 +29,28 @@ object SimbadCluster extends Pipeline {
       metadata <- getMetadata(connection, "silver", "simbad_cluster")
 
       bronzeCols = Seq(
-        "source_id",
-        "ra",
-        "dec",
-        "parallax",
-        "parallax_error",
-        "pmra",
-        "pmdec",
-        "ruwe",
+        "main_id",
+        "ra_deg",
+        "dec_deg",
         "year",
         "month",
         "day"
       )
 
-      ariesClusterRawDF <- IcebergManager.readDf(spark, "s3a://gaia-source/bronze/aries_star_cluster/", Some(bronzeCols))
-      ariesGaiaRawDF <- IcebergManager.readDf(spark, "s3a://gaia-source/bronze/aries_gaia/", Some(bronzeCols))
-
-      bronzeRawDF <- IO.delay(ariesClusterRawDF.unionByName(ariesGaiaRawDF).filter(F.col("source_id").isNotNull))
+      bronzeRawDF <- IcebergManager.readDf(spark, "s3a://gaia-source/bronze/aries_simbad/", Some(bronzeCols))
 
       dfTransformed <- IO.delay {
-          bronzeRawDF.withHealpixIndex(raCol = "ra", decCol = "dec")
+          bronzeRawDF.withHealpixIndex(raCol = "ra_deg", decCol = "dec_deg")
             .withColumn("fct_dt", F.concat(F.col("year"), F.col("month"), F.col("day")))
       }
 
-      dfFinalDs: Dataset[GaiaSilver] = dfTransformed.select(
-        F.col("source_id"),
-        F.col("ra"),
-        F.col("dec"),
-        F.col("parallax"),
-        F.col("parallax_error"),
-        F.col("pmra"),
-        F.col("pmdec"),
-        F.col("ruwe"),
+      dfFinal = dfTransformed.select(
+        F.trim(F.col("main_id")).alias("main_id"),
+        F.col("ra_deg").alias("ra"),
+        F.col("dec_deg").alias("dec"),
         F.col("fct_dt"),
         F.col("healpix_index")
       )
-        .as[GaiaSilver]
-
-      dfFinal = dfFinalDs.toDF()
 
       _ <- IcebergManager.syncIcebergOrCreate(
         spark = spark,
@@ -81,7 +62,7 @@ object SimbadCluster extends Pipeline {
       _ <- overwriteDynamicIO(dfFinal, tableName)
 
       _ <- IO.blocking {
-        val metadataId = metadata.get("id").map(_.toString).getOrElse("gaia_astrometry")
+        val metadataId = metadata.get("id").map(_.toString).getOrElse("simbad_cluster")
         IO.println(s"MetadataId: $metadataId")
         updateMetadata(connection, metadataId, java.sql.Date.valueOf(today))
       }
