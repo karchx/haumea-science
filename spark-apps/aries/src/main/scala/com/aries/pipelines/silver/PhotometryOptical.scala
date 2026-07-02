@@ -1,8 +1,5 @@
 package com.aries.pipelines.silver
 
-import com.aries.core.Pipeline
-import com.aries.common.iceberg.IcebergManager
-import com.aries.common.metadata.MetadataManager
 import cats.effect.IO
 import java.sql.Connection
 import java.time.LocalDate
@@ -10,34 +7,13 @@ import java.time.format.DateTimeFormatter
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.{functions => F}
-import cats.kernel.Monoid
-import cds.healpix._
 
-case class AstroBronze(source_id: String, j_m: Option[Double], h_m: Option[Double], ks_m: Option[Double], year: String, month: String, day: String, ra: Double, dec: Double)
-case class AstroSilver(source_id: String, j_m: Option[Double], h_m: Option[Double], ks_m: Option[Double], fct_dt: String, healpix_index: Long)
+import com.aries.core.Pipeline
+import com.aries.common.iceberg.IcebergManager
+import com.aries.common.metadata.MetadataManager
+import com.aries.transformations.Astrophysics._
 
 object Transformations {
-
-  def addHelpixIndex(ds: Dataset[AstroBronze]): Dataset[AstroSilver] = {
-    import ds.sparkSession.implicits._
-
-    ds.mapPartitions { partitionIterator =>
-      val hpx = Healpix.getNested(6) // 6 = 64 = 2^depth
-      partitionIterator.map { row =>
-        val hpxIndex = hpx.hash(Math.toRadians(row.ra), Math.toRadians(row.dec))
-
-        AstroSilver(
-          source_id = row.source_id,
-          j_m = row.j_m,
-          h_m = row.h_m,
-          ks_m = row.ks_m,
-          fct_dt = s"${row.year}${row.month}${row.day}",
-          healpix_index = hpxIndex
-        )
-      }
-    }
-  }
-
   def applyPhotometryOpticalExtract(df: DataFrame): DataFrame = {
     df.withColumns(Map(
       "catalog_name" -> F.lit("2MASS")
@@ -85,11 +61,14 @@ object PhotometryOptical extends Pipeline {
       ariesClusterRawDF <- IcebergManager.readDf(spark, "s3a://gaia-source/bronze/aries_star_cluster/", Some(bronzeCols))
       ariesGaiaRawDF <- IcebergManager.readDf(spark, "s3a://gaia-source/bronze/aries_gaia/", Some(bronzeCols))
 
-      bronzeRawDF <- IO.delay(ariesClusterRawDF.union(ariesGaiaRawDF).filter(F.col("source_id").isNotNull))
-      typedBronzeDs = bronzeRawDF.as[AstroBronze]
-      silverDs = Transformations.addHelpixIndex(typedBronzeDs)
+      bronzeRawDF <- IO.delay(ariesClusterRawDF.unionByName(ariesGaiaRawDF).filter(F.col("source_id").isNotNull))
 
-      dfFinal = Transformations.applyPhotometryOpticalExtract(silverDs.toDF())
+      dfWithHealpix <- IO.delay {
+        // use transformations.Astrophysics
+        bronzeRawDF.withHealpixIndex(raCol = "ra", decCol = "dec")
+      }
+
+      dfFinal = Transformations.applyPhotometryOpticalExtract(dfWithHealpix)
       _ <- IcebergManager.syncIcebergOrCreate(
         spark = spark,
         tableName = tableName,
