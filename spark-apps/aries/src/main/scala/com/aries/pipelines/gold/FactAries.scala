@@ -5,6 +5,7 @@ import java.sql.Connection
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
+import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.{functions => F}
 
 import com.aries.core.Pipeline
@@ -22,7 +23,13 @@ object FactAries extends Pipeline {
   override def runPipeline(spark: SparkSession, connection: Connection): IO[Unit] = {
     import spark.implicits._
     // equal to 1 arcsec
+    val EPOCH_GAIA = 2016.0
+    val EPOCH_SIMBAD = 2000.0
+    val DELTA_T = EPOCH_GAIA - EPOCH_SIMBAD
+    val MAS_TO_DEG = 1.0 / 3.6e6
+
     val TOLERANCE_DEGREES = 1.0 / 3600.0
+
     val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
     val tableName = "`datalake-haumea`.gold.fact_aries"
     for {
@@ -33,7 +40,7 @@ object FactAries extends Pipeline {
       photoOpticalDf <- IO.delay(spark.table("`datalake-haumea`.silver.photometry_optical"))
       astrometryDf <- IO.delay(spark.table("`datalake-haumea`.silver.gaia_astrometry"))
 
-      unionAriesData = astrometryDf.as("astro").join(
+      astroPhotoDF = astrometryDf.as("astro").join(
         photoOpticalDf.as("po"),
           F.col("po.source_id") === F.col("astro.source_id"),
           "inner"
@@ -52,7 +59,7 @@ object FactAries extends Pipeline {
           F.coalesce(F.col("astro.healpix_index"), F.col("po.healpix_index")).alias("healpix_index")
         )
 
-      joinDf = unionAriesData.as("ad").join(
+      joinDf = astroPhotoDF.as("ad").join(
         simbadDimDf.as("sd"),
         F.col("sd.healpix_index") === F.col("ad.healpix_index"),
        "inner"
@@ -76,12 +83,31 @@ object FactAries extends Pipeline {
           F.col("sd.bk_simbad")
       )
 
-      dfFinal = joinDf.withThresholdAngularD(
+      propagateDf = joinDf
+        .withColumns(Map(
+          "pmra_clean" -> F.coalesce(F.col("pmra"), F.lit(0.0)),
+          "pmdec_clean" -> F.coalesce(F.col("pmdec"), F.lit(0.0)),
+        ))
+        .withColumns(Map(
+          "ra_prop" -> (F.col("ra_r") + (
+            F.col("pmra_clean") * F.lit(DELTA_T * MAS_TO_DEG) / F.cos(F.radians(F.col("dec_r")))
+          )),
+          "dec_prop" -> (F.col("dec_r") + (F.col("pmdec_clean") * F.lit(DELTA_T * MAS_TO_DEG)))
+        ))
+
+      distanceDf = propagateDf.withThresholdAngularD(
         raL = "ra",
         decL = "dec",
-        raR = "ra_r",
-        decR = "dec_r"
+        raR = "ra_prop",
+        decR = "dec_prop"
       ).filter(F.col("threshold_angular_d") <= TOLERANCE_DEGREES)
+
+      windowSpec = Window.partitionBy("source_id").orderBy(F.col("threshold_angular_d").asc)
+
+      dfFinal = distanceDf
+        .withColumn("rank", F.row_number().over(windowSpec))
+        .filter(F.col("rank") === 1)
+        .drop("rank")
 
 
       _ <- IcebergManager.syncIcebergOrCreate(

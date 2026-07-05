@@ -53,7 +53,12 @@ object GaiaAstrometry extends Pipeline {
 
       dfTransformed <- IO.delay {
           bronzeRawDF.withHealpixIndex(raCol = "ra", decCol = "dec")
-            .withColumn("fct_dt", F.concat(F.col("year"), F.col("month"), F.col("day")))
+            .withUnitVectors(raCol = "ra", decCol = "dec")
+            .withColumns(Map(
+              "fct_dt" -> F.concat(F.col("year"), F.col("month"), F.col("day")),
+              "is_reliable_astro" -> (F.col("ruwe") < F.lit(1.4)),
+              "is_reliable_plx" -> (F.col("parallax_error") / F.col("parallax") < F.lit(0.2) && F.col("parallax") > F.lit(0))
+            ))
       }
 
       dfFinalDs: Dataset[GaiaSilver] = dfTransformed.select(
@@ -66,7 +71,12 @@ object GaiaAstrometry extends Pipeline {
         F.col("pmdec"),
         F.col("ruwe"),
         F.col("fct_dt"),
-        F.col("healpix_index")
+        F.col("healpix_index"),
+        F.col("x_unit"),
+        F.col("y_unit"),
+        F.col("z_unit"),
+        F.col("is_reliable_astro"),
+        F.col("is_reliable_plx")
       )
         .as[GaiaSilver]
 
