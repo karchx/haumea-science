@@ -1,0 +1,33 @@
+name:                Hamal
+version:             0.1.0.0
+github:              "karchx/haumea-science"
+license:             BSD-3-Clause
+author:              "Keneth"
+maintainer:          "kenethra.74@gmail.com"
+copyright:           "2026 Keneth"
+
+extra-source-files:
+- README.md
+- CHANGELOG.md
+
+dependencies:
+- base >= 4.7 && < 5
+- text
+- duckdb-simple >= 0.1.5
+
+
+ghc-options:
+- -Wall
+- -Wcompat
+- -Widentities
+- -Wincomplete-record-updates
+- -Wincomplete-uni-patterns
+- -Wmissing-export-lists
+- -Wmissing-home-modules
+- -Wpartial-fields
+- -Wredundant-constraints
+
+executables:
+  Hamal:
+    main:                Main.hs
+    source-dirs:         src

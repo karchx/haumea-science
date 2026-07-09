@@ -32,6 +32,14 @@ object Astrophysics {
     UnitVector ( x, y, z )
   }
 
+  private val calculateDistancePc = F.udf { (parallax: Double) => 
+    1000 / parallax
+  }
+
+  private val calculateIntrinsicMag = F.udf { (mx: Double, dc: Double) => 
+    mx - (5 * Math.log10(dc)) + 5
+  }
+
   implicit class AstrophysicsDataFrame(df: DataFrame) {
     def withHealpixIndex(raCol: String, decCol: String, depth: Int = 6): DataFrame = {
       df.withColumn(
@@ -55,6 +63,21 @@ object Astrophysics {
         "threshold_angular_d",
         angularDistance(df(raL), df(decL), df(raR), df(decR))
       )
+    }
+
+    def withDistanceParsecs(parallax: String, reliablePlx: String): DataFrame = {
+      df.withColumn(
+        "distance_pc",
+        F.when(df(reliablePlx) === F.lit(true), calculateDistancePc(df(parallax))).otherwise(0.0)
+      )
+    }
+
+    def withIntrinsicAbsoluteMagnitude(jM: String, jH: String, jKs: String, dc: String): DataFrame = {
+      df.withColumns(Map(
+        "abs_mag_j" -> calculateIntrinsicMag(df(jM), df(dc)),
+        "abs_mag_h" -> calculateIntrinsicMag(df(jH), df(dc)),
+        "abs_mag_ks" -> calculateIntrinsicMag(df(jKs), df(dc)),
+      ))
     }
   }
 }

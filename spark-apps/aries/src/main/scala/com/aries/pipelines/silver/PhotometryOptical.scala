@@ -69,7 +69,11 @@ object PhotometryOptical extends Pipeline {
         Transformations.applyPhotometryOpticalExtract(
           bronzeRawDF.withHealpixIndex(raCol = "ra", decCol = "dec")
         )
-          .withColumn("fct_dt", F.concat(F.col("year"), F.col("month"), F.col("day")))
+          .withColumns(Map(
+            "fct_dt" -> F.concat(F.col("year"), F.col("month"), F.col("day")),
+            "color_j_h" -> (F.col("j_m") - F.col("h_m")),
+            "color_h_ks" -> (F.col("h_m") - F.col("ks_m"))
+          ))
       }
 
       dfFinalDs: Dataset[AstroSilver] = dfTransformed.select(
@@ -81,6 +85,8 @@ object PhotometryOptical extends Pipeline {
         F.col("healpix_index"),
         F.col("ra"),
         F.col("dec"),
+        F.col("color_j_h"),
+        F.col("color_h_ks")
       )
       .as[AstroSilver]
 

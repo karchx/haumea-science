@@ -1,0 +1,10 @@
+snapshot:
+  url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/24/49.yaml
+
+packages:
+- .
+
+extra-deps:
+- duckdb-simple-0.1.5.0@sha256:d5a367cebae78e33b2a1eadf0e7575e69b8c675f51b97180428387bd8e0eceed,2363
+- duckdb-ffi-1.5.0.0@sha256:9282ff51253f0d78de74e2e0bf8f77db8ecd35cab4e9c7486ef23bab0e90e0c9,4469
+

@@ -49,11 +49,17 @@ object FactAries extends Pipeline {
           F.col("po.j_m"),
           F.col("po.h_m"),
           F.col("po.ks_m"),
+          F.col("po.color_j_h"),
+          F.col("po.color_h_ks"),
           F.col("astro.parallax"),
           F.col("astro.parallax_error"),
+          F.col("astro.is_reliable_plx"),
           F.col("astro.pmra"),
           F.col("astro.pmdec"),
           F.col("astro.ruwe"),
+          F.col("astro.x_unit"),
+          F.col("astro.y_unit"),
+          F.col("astro.z_unit"),
           F.coalesce(F.col("astro.ra"), F.col("po.ra")).alias("ra"),
           F.coalesce(F.col("astro.dec"), F.col("po.dec")).alias("dec"),
           F.coalesce(F.col("astro.healpix_index"), F.col("po.healpix_index")).alias("healpix_index")
@@ -62,7 +68,7 @@ object FactAries extends Pipeline {
       joinDf = astroPhotoDF.as("ad").join(
         simbadDimDf.as("sd"),
         F.col("sd.healpix_index") === F.col("ad.healpix_index"),
-       "inner"
+       "left"
       )
       .select(
           F.col("ad.source_id"),
@@ -77,9 +83,14 @@ object FactAries extends Pipeline {
           F.col("ad.ra"),
           F.col("ad.dec"),
           F.col("ad.healpix_index"),
+          F.col("ad.x_unit"),
+          F.col("ad.y_unit"),
+          F.col("ad.z_unit"),
+          F.col("ad.color_j_h"),
+          F.col("ad.color_h_ks"),
+          F.col("ad.is_reliable_plx"),
           F.col("sd.ra").alias("ra_r"),
           F.col("sd.dec").alias("dec_r"),
-          F.col("sd.main_id"),
           F.col("sd.bk_simbad")
       )
 
@@ -100,16 +111,54 @@ object FactAries extends Pipeline {
         decL = "dec",
         raR = "ra_prop",
         decR = "dec_prop"
-      ).filter(F.col("threshold_angular_d") <= TOLERANCE_DEGREES)
+      )
+      .withDistanceParsecs(
+        parallax = "parallax",
+        reliablePlx = "is_reliable_plx"
+      )
+      .withIntrinsicAbsoluteMagnitude(
+        jM = "j_m",
+        jH = "h_m",
+        jKs = "ks_m",
+        dc = "distance_pc"
+      )
+      .withColumn(
+        "tangential_velocity",
+        F.lit(4.74) * F.col("distance_pc") * F.sqrt(F.pow(F.col("pmra"), 2)) + F.pow(F.col("pmdec"), 2)
+      )
 
-      windowSpec = Window.partitionBy("source_id").orderBy(F.col("threshold_angular_d").asc)
+      windowSpec = Window.partitionBy("ad.source_id").orderBy(F.col("threshold_angular_d").asc)
 
       dfFinal = distanceDf
         .withColumn("rank", F.row_number().over(windowSpec))
+        .withColumn("bk_simbad", F.when(F.col("threshold_angular_d") <= TOLERANCE_DEGREES, F.col("bk_simbad")).otherwise(F.lit(-1)))
         .filter(F.col("rank") === 1)
         .drop("rank")
-
-
+        .select(
+          F.col("source_id"),
+          F.col("j_m"),
+          F.col("h_m"),
+          F.col("ks_m"),
+          F.col("parallax"),
+          F.col("parallax_error"),
+          F.col("pmra"),
+          F.col("pmdec"),
+          F.col("ruwe"),
+          F.col("healpix_index"),
+          F.col("ra"),
+          F.col("dec"),
+          F.col("bk_simbad"),
+          F.col("x_unit").alias("x"),
+          F.col("y_unit").alias("y"),
+          F.col("z_unit").alias("z"),
+          F.col("color_j_h"),
+          F.col("color_h_ks"),
+          F.col("distance_pc"),
+          F.col("abs_mag_j"),
+          F.col("abs_mag_h"), 
+          F.col("abs_mag_ks"),
+          F.col("tangential_velocity")
+        )
       _ <- IcebergManager.syncIcebergOrCreate(
         spark = spark,
         tableName = tableName,
