@@ -2,4 +2,5 @@ spark-apps/**/target
 **/.env
 spark-apps/**/.bloop
 spark-apps/**/.metals
+test
 
